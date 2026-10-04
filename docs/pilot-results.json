@@ -1,0 +1,160 @@
+{
+  "date": "2026-10-04",
+  "conclusion": "Real AReaL SDK/API feasibility passed; no training speedup established.",
+  "hardware": "One H100 PCIe on Della login node",
+  "api_submit_seconds": 0.017554390709847212,
+  "direct": {
+    "job_id": "17f14d21ef244b819ea471770b7000dd",
+    "status": "succeeded",
+    "error": null,
+    "wall_seconds": 137.86435205396265,
+    "spec": {
+      "model": "qwen3-0.6b",
+      "dataset": "digits",
+      "environment": "math",
+      "reward": "digit_preference",
+      "algorithm": "grpo",
+      "max_gpus": 1,
+      "rollouts_per_prompt": 2,
+      "prompts_per_step": 2,
+      "max_steps": 1,
+      "max_new_tokens": 16,
+      "max_prompt_tokens": 256,
+      "max_concurrent_rollouts": 2,
+      "max_staleness": 0,
+      "audit_on": true,
+      "seed": 1,
+      "learning_rate": 6e-06,
+      "timeout_seconds": 180,
+      "target": "login_pilot",
+      "cache_mode": "recompute",
+      "mapper_registry": null,
+      "score_centering": false
+    },
+    "native": {
+      "initialization_seconds": 79.41070914687589,
+      "training_seconds": 18.16711695306003,
+      "teardown_seconds": 8.103244681842625,
+      "native_total_seconds": 105.68107078177854,
+      "requested_optimizer_steps": 1,
+      "trainer": "AReaL PPOTrainer / FSDP GRPO",
+      "score_centering": false
+    },
+    "audit": {
+      "enabled": true,
+      "record_files": 4,
+      "successful_trajectories": 4,
+      "failed_trajectories": 0,
+      "rewards": [
+        0.0,
+        0.0,
+        0.0,
+        0.1111111119389534
+      ],
+      "output_tokens": 64
+    },
+    "checkpoint_paths": [
+      "areal/checkpoints/hh9077/nibble/17f14d21ef244b819ea471770b7000dd/default/epoch0epochstep0globalstep0"
+    ],
+    "limitations": [
+      "Tiny interface pilot; no convergence or time-to-target-quality claim.",
+      "Single login GPU shares trainer and rollout compute; no separate-GPU async speed claim.",
+      "Score centering is not enabled; no sampler top-k transport in this adapter.",
+      "Cado records outcomes; live change detection needs more steps and is not enabled.",
+      "GPU busy checks do not reserve hardware against other cluster users."
+    ],
+    "training_evidence": {
+      "completed_steps": 1,
+      "gradient_norms": [
+        7.1353
+      ],
+      "update_successful": [
+        1.0
+      ]
+    }
+  },
+  "sdk": {
+    "job_id": "3b56ba9c50924ab2bf9d59392441300a",
+    "status": "succeeded",
+    "error": null,
+    "wall_seconds": 142.33768855361268,
+    "spec": {
+      "model": "qwen3-0.6b",
+      "dataset": "digits",
+      "environment": "math",
+      "reward": "digit_preference",
+      "algorithm": "grpo",
+      "max_gpus": 1,
+      "rollouts_per_prompt": 2,
+      "prompts_per_step": 2,
+      "max_steps": 1,
+      "max_new_tokens": 16,
+      "max_prompt_tokens": 256,
+      "max_concurrent_rollouts": 2,
+      "max_staleness": 0,
+      "audit_on": true,
+      "seed": 1,
+      "learning_rate": 6e-06,
+      "timeout_seconds": 180,
+      "target": "login_pilot",
+      "cache_mode": "recompute",
+      "mapper_registry": null,
+      "score_centering": false
+    },
+    "native": {
+      "initialization_seconds": 83.87014894327149,
+      "training_seconds": 19.77818716596812,
+      "teardown_seconds": 8.559491076972336,
+      "native_total_seconds": 112.20782718621194,
+      "requested_optimizer_steps": 1,
+      "trainer": "AReaL PPOTrainer / FSDP GRPO",
+      "score_centering": false
+    },
+    "audit": {
+      "enabled": true,
+      "record_files": 4,
+      "successful_trajectories": 4,
+      "failed_trajectories": 0,
+      "rewards": [
+        0.0,
+        0.1111111119389534,
+        0.0,
+        0.0
+      ],
+      "output_tokens": 64
+    },
+    "checkpoint_paths": [
+      "areal/checkpoints/hh9077/nibble/3b56ba9c50924ab2bf9d59392441300a/default/epoch0epochstep0globalstep0"
+    ],
+    "limitations": [
+      "Tiny interface pilot; no convergence or time-to-target-quality claim.",
+      "Single login GPU shares trainer and rollout compute; no separate-GPU async speed claim.",
+      "Score centering is not enabled; no sampler top-k transport in this adapter.",
+      "Cado records outcomes; live change detection needs more steps and is not enabled.",
+      "GPU busy checks do not reserve hardware against other cluster users."
+    ],
+    "training_evidence": {
+      "completed_steps": 1,
+      "gradient_norms": [
+        7.1353
+      ],
+      "update_successful": [
+        1.0
+      ]
+    }
+  },
+  "gpu_runs_total": 3,
+  "optimizer_steps_total": 3,
+  "audit_records_total": 12,
+  "combined_run_wall_seconds": 391.8831726908684,
+  "cpu_tests_passed": 6,
+  "caveats": [
+    "One trial per condition; no statistical performance conclusion.",
+    "Synthetic digit-preference reward; not a task-quality evaluation.",
+    "Both conditions used the same training specification and audit setting.",
+    "Kernel cache location was moved under Nibble scratch for the SDK run; timings do not isolate API overhead.",
+    "One physical GPU, synchronous RL, no cache translation or score centering.",
+    "Initial successful run had zero rewards/gradient; fixture fixed before direct/SDK pair.",
+    "One earlier interpreter-path failure ended before GPU use."
+  ]
+}

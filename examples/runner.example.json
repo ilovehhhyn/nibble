@@ -1,0 +1,23 @@
+{
+  "root": "/your/scratch/nibble",
+  "areal_root": "/your/scratch/AReaL",
+  "cado_src": "/your/scratch/cado/tplane/src",
+  "python": "/your/scratch/AReaL/.venv/bin/python",
+  "gpu_ids": [
+    "0"
+  ],
+  "models": {
+    "qwen3-0.6b": "/your/scratch/models/Qwen3-0.6B"
+  },
+  "datasets": {
+    "gsm8k": "nibble.native:gsm8k_dataset",
+    "digits": "nibble.native:digit_dataset"
+  },
+  "rewards": {
+    "gsm8k": "areal.reward.gsm8k:gsm8k_reward_fn",
+    "digit_preference": "nibble.native:digit_reward"
+  },
+  "environments": {
+    "math": "nibble.workflow:AuditedRLVRWorkflow"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "source_sha256": {
+    "/scratch/gpfs/ARORA/hh9077/areal-kv/AReaL-arm/areal/trainer/rl_trainer.py": "b5f866c61bdfb7d0ff2ce23a91aae872383f2a809e099c9740c90f083eedd09d",
+    "/scratch/gpfs/ARORA/hh9077/areal-kv/AReaL-arm/areal/workflow/rlvr.py": "a532f6523bededa07171e0b60a3a1ff5f8151da71abfff80bd1bce6e3f74b45e",
+    "/scratch/gpfs/ARORA/hh9077/areal-kv/AReaL-arm/areal/experimental/kvmap/sglang_bridge.py": "049a6a267e9d385c68283a16f8359f654803fd78b237808aaafccde4351e3e45",
+    "/scratch/gpfs/ARORA/hh9077/cado/tplane/src/tplane/unit.py": "c98778e4a9db0d2feabc73ce1545d3dc0f8b92f74538fd99c8e7a0c17393c79d",
+    "/scratch/gpfs/ARORA/hh9077/areal-kv/sglang-fork-src/python/sglang/srt/mem_cache/retained_prefix_cache.py": "817d5c1630892adf8ed81e79bc41125737fc9b469db9fe32267986cdab33da0f",
+    "/scratch/gpfs/ARORA/hh9077/nibble/src/nibble/native.py": "73ad160eec43f7da021d413554b0c5c05f589182be3317ac993e6b46df0ba70b",
+    "/scratch/gpfs/ARORA/hh9077/nibble/src/nibble/workflow.py": "8c35eb1d621abf2a6d01d08e9f23f8aeff5fb308bb8b6b268fc7d22508935461"
+  },
+  "versions": {
+    "torch": "2.9.1+cu129",
+    "transformers": "5.3.0",
+    "sglang": "0.5.10.post1",
+    "fastapi": "0.141.1",
+    "uvicorn": "0.33.0",
+    "psutil": "7.2.2",
+    "datasets": "4.8.5",
+    "pytest": "9.0.3"
+  },
+  "score_centering_reference_commit": "7c56e9ee2972aa57f446cf564de1a1658d14b321"
+}
