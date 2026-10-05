@@ -61,7 +61,7 @@ def build_report(run_dir, status, error=None, elapsed=None):
 
     def metric(name):
         return [
-            float(x) for x in re.findall(re.escape(name) + r"\s*│\s*([+\-0-9.e]+)", log)
+            float(x) for x in re.findall(re.escape(name) + r"(?:/avg)?\s*│\s*([+\-0-9.e]+)", log)
         ]
 
     report["training_evidence"] = {
@@ -90,7 +90,13 @@ def build_report(run_dir, status, error=None, elapsed=None):
         steps = [
             json.loads(line) for line in metrics_path.read_text().splitlines() if line
         ]
-        report["training_evidence"].update(completed_steps=len(steps), steps=steps)
+        report["training_evidence"].update(
+            completed_steps=len(steps),
+            steps=steps,
+            gradient_norms=[step["grad_norm"] for step in steps],
+            policy_losses=[step["train_loss"] for step in steps],
+            uncentered_tis_losses=[step["train_loss"] for step in steps],
+        )
     kv_events = []
     for path in run_dir.glob("kv-events*"):
         paths = list(path.rglob("*.jsonl")) if path.is_dir() else [path]

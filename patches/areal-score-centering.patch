@@ -65,16 +65,24 @@
              is_finite = (
 --- a/areal/engine/fsdp_engine.py
 +++ b/areal/engine/fsdp_engine.py
-@@ -2108,6 +2108,8 @@
+@@ -2108,6 +2108,16 @@
              trie_node = inputs.pop("trie_node", None)
              ulysses_pad_size = 0
  
++        if os.environ.get("NIBBLE_OBJECTIVE") == "group_pg_tis":
++            if self.parallel_helper.sp_size != 1 or self.parallel_helper.tp_size != 1:
++                raise ValueError("Nibble packed SDPA requires TP=SP=1")
++            from nibble.attention import packed_causal_mask
++
++            mask = packed_causal_mask(inputs["position_ids"])
++            inputs["attention_mask"] = dict(full_attention=mask, sliding_attention=mask)
++
 +        inputs.pop("sampler_topk_ids", None)
 +        inputs.pop("sampler_topk_logprobs", None)
          inputs.pop("turn_ids", None)
          inputs.pop("is_truncated", None)
  
-@@ -2223,6 +2225,13 @@
+@@ -2223,6 +2233,13 @@
          local_weight = compute_microbatch_loss_weight(ctx.mb_input, loss_weight_fn)
          if local_weight == 0:
              return logits.mean() * 0.0

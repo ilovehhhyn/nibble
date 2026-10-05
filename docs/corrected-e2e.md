@@ -15,3 +15,7 @@ The next release uses the actual supported auto load format. It also explicitly 
 ## Current validation job
 
 15068076 (griffith), four GPUs, one-hour cap, three matched updates per arm. Frozen revision 61e1d0c26ad6ce8cafc921a83483ae9ae8bed19e. The actual installed SGLang loader validates auto in the regression. Eight baseline checks and ten affected adapter/config/loss checks passed; patch application and seven source hashes verified. The obsolete duplicate 15059125 was cancelled when 15067116 started. Results pending under state/campaign-15068076.
+
+## Numerical validity repair after 15068076
+
+All three arms completed, including API submission, score-centering, mapper fitting and real mapped resumes. However, the initial native train/sampler log-probability gap was approximately 4.5 nats. CPU inspection confirmed that packed SDPA inputs with null attention masks allow cross-example attention. A tiny Qwen2 reference showed maximum logit error 0.0769967 with the original packing and 0.0 with an explicit per-sequence causal mask. The previous results (sync 23/32, direct 21/32, API 20/32; training 86.95/77.63/163.59 seconds) are provisional and cannot validate the intended RL comparison. The corrected adapter preserves SDPA but supplies a block causal mask; logits and gradients are checked against separately evaluated sequences. Report parsing is also corrected for /avg metrics and baseline gradients. Historical v2 source and all reports are preserved.
