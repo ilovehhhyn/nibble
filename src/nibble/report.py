@@ -36,15 +36,14 @@ def build_report(run_dir, status, error=None, elapsed=None):
         "native": json.loads(result_path.read_text()) if result_path.exists() else None,
         "audit": {"enabled": spec["audit_on"], "record_files": 0},
         "checkpoint_paths": [
-            str(p.parent.relative_to(run_dir))
-            for p in (run_dir / "areal").rglob("config.json")
+            str(p.parent.relative_to(run_dir)) for p in run_dir.rglob("config.json")
         ],
         "limitations": [
             "Tiny interface pilot; no convergence or time-to-target-quality claim.",
-            "Single login GPU shares trainer and rollout compute; no separate-GPU async speed claim.",
-            "Score centering is not enabled; no sampler top-k transport in this adapter.",
+            "Single seed; short-run comparison cannot establish convergence.",
+            "Centered and uncentered loss values are different objectives; use heldout reward for quality.",
             "Cado records outcomes; live change detection needs more steps and is not enabled.",
-            "GPU busy checks do not reserve hardware against other cluster users.",
+            "Hardware is reserved only for jobs run inside a Slurm allocation.",
         ],
     }
     audit_files = list((run_dir / "audit" / "records").glob("*.json"))
@@ -70,6 +69,52 @@ def build_report(run_dir, status, error=None, elapsed=None):
         "gradient_norms": metric("ppo_actor/update/grad_norm"),
         "update_successful": metric("ppo_actor/update/update_successful"),
     }
+    report["training_evidence"].update(
+        policy_losses=metric("ppo_actor/update/nibble_policy_loss"),
+        uncentered_tis_losses=metric("ppo_actor/update/nibble_uncentered_tis_loss"),
+        train_sampler_logprob_gaps=metric("ppo_actor/update/nibble_abs_logp_gap"),
+        score_centering_token_fraction=metric("ppo_actor/update/nibble_sc_tokens"),
+    )
+    report["audit"]["policy_versions"] = [r.get("tags", {}) for r in records]
+    event_path = run_dir / "events.jsonl"
+    events = (
+        [json.loads(line) for line in event_path.read_text().splitlines() if line]
+        if event_path.exists()
+        else []
+    )
+    report["mapper_fitting_seconds"] = sum(
+        e.get("seconds", 0) for e in events if e.get("event") == "mapper_ready"
+    )
+    metrics_path = run_dir / "metrics.jsonl"
+    if metrics_path.exists():
+        steps = [
+            json.loads(line) for line in metrics_path.read_text().splitlines() if line
+        ]
+        report["training_evidence"].update(completed_steps=len(steps), steps=steps)
+    kv_events = []
+    for path in run_dir.glob("kv-events*"):
+        paths = list(path.rglob("*.jsonl")) if path.is_dir() else [path]
+        for file in paths:
+            kv_events.extend(
+                json.loads(line) for line in file.read_text().splitlines() if line
+            )
+    report["kv"] = {
+        "map_resumes": sum(
+            e.get("event") == "resume" and e.get("method") == "map" for e in kv_events
+        ),
+        "rebuild_resumes": sum(
+            e.get("event") == "resume" and e.get("method") == "rebuild"
+            for e in kv_events
+        ),
+        "translation_batches": sum(
+            e.get("event") == "translate_batch" for e in kv_events
+        ),
+        "events": kv_events,
+    }
+    if spec.get("cache_mode") == "map" and not report["kv"]["map_resumes"]:
+        report["limitations"].append(
+            "No mapped resume was observed: cache speedup was not exercised."
+        )
     if records and rewards and len(set(rewards)) == 1:
         report["limitations"].append(
             "All recorded rewards are equal; inspect GRPO advantages and gradient norm."
@@ -83,7 +128,7 @@ def build_report(run_dir, status, error=None, elapsed=None):
         for key, value in report["native"].items():
             if key.endswith("_seconds"):
                 text += f"| {key.removesuffix('_seconds')} | {value:.3f} |\n"
-    text += "\nThis run uses the real AReaL trainer. It does not establish a training speedup or equivalent final quality.\n"
+    text += "\nTrainer identity and objective are in native-result.json. A short run does not establish equivalent final quality.\n"
     text += f"\nCado record files: {len(audit_files)}.\n"
     (run_dir / "report.md").write_text(text)
     return report

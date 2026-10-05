@@ -21,7 +21,9 @@ def render_config(spec, runtime, run_dir):
         "total_train_epochs": 1,
         "total_train_steps": spec.max_steps,
         "cluster.n_nodes": 1,
-        "cluster.n_gpus_per_node": 1 if spec.target == "login_pilot" else 2,
+        "cluster.n_gpus_per_node": 1
+        if spec.target == "login_pilot"
+        else (3 if spec.target == "slurm" else 2),
         "cluster.fileroot": str(run_dir / "areal"),
         "cluster.name_resolve.nfs_record_root": str(run_dir / "name_resolve"),
         "scheduler.type": "local",
@@ -30,12 +32,16 @@ def render_config(spec, runtime, run_dir):
         "actor.attn_impl": "sdpa",
         "actor.weight_update_mode": "disk",
         "actor.optimizer.lr": spec.learning_rate,
-        "actor.mb_spec.max_tokens_per_mb": 512,
+        "actor.mb_spec.max_tokens_per_mb": 512
+        if spec.target == "login_pilot"
+        else 2048,
         "actor.gradient_checkpointing": True,
         "actor.kl_ctl": 0.0,
         "ref": None,
         "valid_dataset": None,
-        "rollout.backend": "sglang:d1p1t1",
+        "rollout.backend": "sglang:d2p1t1"
+        if spec.target == "slurm"
+        else "sglang:d1p1t1",
         "rollout.max_head_offpolicyness": spec.max_staleness,
         "rollout.max_concurrent_rollouts": spec.max_concurrent_rollouts,
         "rollout.enable_rollout_tracing": True,
@@ -45,6 +51,7 @@ def render_config(spec, runtime, run_dir):
         "gconfig.max_tokens": spec.max_prompt_tokens + spec.max_new_tokens,
         "gconfig.temperature": 1.0,
         "gconfig.top_p": 1.0,
+        "gconfig.top_k": -1,
         "train_dataset.batch_size": spec.prompts_per_step,
         "train_dataset.shuffle": False,
         "train_dataset.num_workers": 0,
@@ -55,7 +62,8 @@ def render_config(spec, runtime, run_dir):
         "sglang.max_running_requests": spec.max_concurrent_rollouts,
         "sglang.disable_cuda_graph": True,
         "saver.freq_epochs": None,
-        "saver.freq_steps": spec.max_steps,
+        "saver.freq_steps": 1 if spec.target == "slurm" else spec.max_steps,
+        "saver.mode": "sync",
         "recover.mode": "disabled",
         "recover.freq_epochs": None,
         "recover.freq_secs": None,
@@ -63,17 +71,39 @@ def render_config(spec, runtime, run_dir):
         "evaluator.freq_steps": None,
         "stats_logger.wandb.mode": "disabled",
     }
+    if spec.objective == "group_pg_tis":
+        values.update(
+            {
+                "actor.reward_scaling": 1.0,
+                "actor.reward_bias": 0.0,
+                "actor.reward_norm.std_level": None,
+                "actor.adv_norm": None,
+                "actor.recompute_logprob": False,
+                "actor.use_decoupled_loss": True,
+                "actor.prox_logp_method": "reuse_train_logp",
+                "actor.rejection_sampling": None,
+                "actor.optimizer.warmup_steps_proportion": 0.0,
+                "actor.discount": 1.0,
+                "actor.gae_lambda": 1.0,
+            }
+        )
     if spec.cache_mode == "map":
         values.update(
             {
                 "sglang.kv_retain_on_abort": True,
                 "sglang.kv_migration_mode": "map",
                 "sglang.kv_mapper_module": "areal.experimental.kvmap.sglang_bridge",
-                "sglang.kv_mapper_registry": str(Path(spec.mapper_registry).resolve()),
+                "sglang.kv_mapper_registry": str(
+                    (run_dir / "registry")
+                    if spec.fit_mappers
+                    else Path(spec.mapper_registry).resolve()
+                ),
                 "sglang.kv_max_migration_depth": 1,
                 "sglang.kv_event_log": str(run_dir / "kv-events"),
             }
         )
+    if spec.fit_mappers:
+        (run_dir / "registry").mkdir(exist_ok=True)
     for key, value in values.items():
         OmegaConf.update(cfg, key, value, merge=False)
     path = run_dir / "areal.yaml"
@@ -109,7 +139,12 @@ def run(spec, runtime, run_dir):
     if workflow_class == "nibble.workflow:AuditedRLVRWorkflow":
         workflow_kwargs.update(audit_on=spec.audit_on, audit_dir=str(run_dir / "audit"))
     wall = time.perf_counter()
-    with PPOTrainer(config, train_dataset=dataset, valid_dataset=None) as trainer:
+    trainer_class = PPOTrainer
+    if spec.fit_mappers:
+        from .mapper import fitting_trainer
+
+        trainer_class = fitting_trainer(PPOTrainer, spec, runtime, run_dir)
+    with trainer_class(config, train_dataset=dataset, valid_dataset=None) as trainer:
         initialized = time.perf_counter()
         trainer.train(
             workflow=workflow_class.replace(":", "."),
@@ -126,7 +161,8 @@ def run(spec, runtime, run_dir):
             "native_total_seconds": ended - wall,
             "requested_optimizer_steps": spec.max_steps,
             "trainer": "AReaL PPOTrainer / FSDP GRPO",
-            "score_centering": False,
+            "score_centering": spec.score_centering,
+            "objective": spec.objective,
         },
     )
 
@@ -187,3 +223,45 @@ def digit_reward(prompt, completions, prompt_ids, completion_ids, answer, **kwar
     text = completions.strip()
     match = re.search(r"[0-9]", text)
     return int(match.group(0)) / 9.0 if match else 0.0
+
+
+def strict_gsm8k_reward(
+    prompt, completions, prompt_ids, completion_ids, answer, **kwargs
+):
+    """Use the original verifier, allowing infrastructure exceptions to reach Cado."""
+    from areal.reward import get_math_verify_worker
+
+    return get_math_verify_worker().verify(str(completions), str(answer))
+
+
+def benchmark_dataset(*, tokenizer, count, max_prompt_tokens):
+    """Use only original holdout indices for training; calibration/dev stay separate.
+
+    Original 'holdout' refers to the mapper experiment's training-set partition,
+    not the official GSM8K test set used for final quality evaluation.
+    """
+    import os
+    import json
+    from datasets import Dataset, load_dataset
+
+    split = json.loads(Path(os.environ["NIBBLE_SPLITS"]).read_text())
+    data = load_dataset("openai/gsm8k", "main", split="train")
+    rows = []
+    for idx in split["indices"]["holdout"]:
+        item = data[idx]
+        messages = [
+            {
+                "role": "user",
+                "content": item["question"] + "\nPut the final answer in \\boxed{}.",
+            }
+        ]
+        ids = tokenizer.apply_chat_template(
+            messages, tokenize=True, add_generation_prompt=True, enable_thinking=False
+        )
+        if len(ids) <= max_prompt_tokens:
+            rows.append(
+                {"messages": messages, "answer": item["answer"], "dataset_index": idx}
+            )
+        if len(rows) == count:
+            break
+    return Dataset.from_list(rows)

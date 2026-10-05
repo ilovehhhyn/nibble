@@ -1,0 +1,35 @@
+{
+  "areal_commit": "040cbfd50a0f4ef58cce844132a9c87c95b7e323",
+  "sglang_commit": "bc51acaba6f7f40b9b18d5d78db79d7d93b839e3",
+  "files": {
+    "areal/api/io_struct.py": {
+      "original": "57643e1e318291ee38f6b7633678dcb535da3bbb330ffcc5c1caefb4566b9359",
+      "patched": "7697d33988515c6908a2d5585506bd73fd566590f13a5987b44aa63e3b48239f"
+    },
+    "areal/engine/fsdp_engine.py": {
+      "original": "3134c34c445cb6acb6b005a4bade9c770e7eac5a4365c7adb289f078017485e7",
+      "patched": "ec14ae6dc0b2cb84581b55cab93280a03850c5c49777082a873e18525ab217a4"
+    },
+    "areal/engine/sglang_remote.py": {
+      "original": "0b5ff8cc65d26af2ebf385e9c5af1f592624c0786764bc9d19da715637811407",
+      "patched": "390f660235ed0bc218fb2a4588fd7108e248425017f0c79a47c03f61cd463744"
+    },
+    "areal/infra/remote_inf_engine.py": {
+      "original": "25fa9736b90b70089240ce96a13ec4c2a2f406723994d14093cfe3db4b0ecc3f",
+      "patched": "606cf070bc02c1b5a1a185b2215b7f780c5d996ae35e8e7d80ba01ddb2402082"
+    },
+    "areal/trainer/ppo/actor.py": {
+      "original": "22fa0b415923c61a76b3d645acad0929024acb0dfdc0a0b2f69be32eb4e95493",
+      "patched": "4d34bddcf8d4ddd6cb0fcf65ec8c933f23083b90661cc8966cc28c89a3762e42"
+    },
+    "areal/utils/data.py": {
+      "original": "380dbddc720311cd74768c4468a67d88efb4c273899438975408d737c80039de",
+      "patched": "b6d36b08b27d2b880f41ed3aab9e288fa7dd4fbc854bf7dd65cd31d4eade1297"
+    },
+    "areal/workflow/rlvr.py": {
+      "original": "a532f6523bededa07171e0b60a3a1ff5f8151da71abfff80bd1bce6e3f74b45e",
+      "patched": "c5f54dcc9a737d4935114256857b9892250ea399fa54da8f2fef87244b500f5d"
+    }
+  },
+  "paper": "https://arxiv.org/html/2609.20807v1"
+}

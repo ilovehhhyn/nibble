@@ -1,157 +1,62 @@
 # Nibble
 
-Experimental Python SDK and local API for real AReaL GRPO jobs on your GPU host,
-with Cado trajectory records. This is a feasibility MVP.
+Experimental Python SDK and authenticated local API for bounded RL jobs on researchers' GPUs. Training uses Helen's private AReaL KV-cache fork, with Cado trajectory records.
 
-## Capabilities
+The initial one-GPU interface pilot completed actual updates, checkpoints and audits. It showed **no speedup**: [initial results](docs/pilot-results.md). The new four-GPU comparison is described in [the experiment protocol](docs/async-comparison.md); queued work is not a measured result.
 
-- CPU-only client: plan, submit, status, events, cancel, wait and report.
-- Authenticated loopback API, durable job status and one runner.
-- Real AReaL PPOTrainer/FSDP and forked SGLang with a GPU ceiling.
-- Registered dataset, environment and reward entry points.
-- Cado outcome records, native checkpoints, phase timings and explicit failures.
+```python
+from nibble import Client
 
-See [pilot results](docs/pilot-results.md) for executed checks and
-[research notes](docs/research.md) for sources and deferred optimizations.
+job = Client().train(
+    model="qwen25-1.5b", dataset="gsm8k-benchmark", reward="gsm8k-strict",
+    target="slurm", max_gpus=4, max_steps=15,
+    prompts_per_step=8, rollouts_per_prompt=4,
+    max_new_tokens=1024, max_prompt_tokens=1024,
+    max_concurrent_rollouts=64, max_staleness=2,
+    timeout_seconds=900, objective="group_pg_tis",
+    cache_mode="map", fit_mappers=True, score_centering=True, audit_on=True,
+)
+print(job.id)
+print(job.status())
+# job.wait(timeout=930)
+# job.report()
+# job.cancel()
+```
 
-## Della quick start
+`target="slurm"` requires the runner to be **inside an existing allocation**. The campaign batch script obtains the allocation; the ordinary HTTP endpoint does not submit arbitrary Slurm requests. Models, datasets, rewards and environments must be registered in the trusted runner configuration. This MVP accepts named plugins, not untrusted remote code uploads.
 
-Everything lives under /scratch/gpfs/ARORA/hh9077/nibble. Existing AReaL and Cado
-installations are dependencies and have not been modified.
+## Loss module
 
-On Della:
+[`score_centering.py`](src/nibble/score_centering.py) implements the paper's modular policy-gradient correction with optional TIS/MIS. Supply sampler top-k probabilities, trainer logprobs and advantages from any reward function. It is a loss component rather than a reward decorator. CPU tests compare its gradients with dense references, including packed sequences and padding.
 
-    cd /scratch/gpfs/ARORA/hh9077/nibble
-    source work/env.sh
-    "$NIBBLE_PYTHON" -m nibble.cli serve
+The supported centered objective is `group_pg_tis`: group-mean advantages + REINFORCE + token TIS, following the paper's common objective. It is distinct from the legacy clipped GRPO path. The actual probability transport and FSDP integration are a small pinned [AReaL patch](patches/areal-score-centering.patch); stock AReaL is rejected for this objective.
 
-In another Della shell:
+## Della campaign
 
-    cd /scratch/gpfs/ARORA/hh9077/nibble
-    source work/env.sh
-    "$NIBBLE_PYTHON" examples/train.py
+All work lives under `/scratch/gpfs/ARORA/hh9077/nibble`. `jobs/compare.sbatch` runs three matched arms sequentially on four allocated GPUs: standalone synchronous HF training, direct asynchronous AReaL, then Nibble with mapping and centering. It uses the cached 1.5B model, 15 steps per arm, a 60-minute allocation cap and no automatic retries. See the protocol for exact settings, held-out evaluation, calibration, fairness limits and source revisions.
 
-The environment script loads the private token from .env.local (mode 0600).
-Neither file is committed. Do not paste the token into a notebook or publish it.
+```bash
+# From the configured Della checkout:
+NIBBLE_PROJECT_ROOT="$PWD" sbatch jobs/compare.sbatch
+# After the job writes results:
+python -m nibble.campaign state/campaign-JOBID --summarize
+```
 
-For a laptop client, install this package and forward the endpoint:
+The batch script depends on the scratch `work/env.sh`, cached models/data, the existing Python/CUDA runtime, and the private AReaL snapshot. Copy a clean checkout at the pinned revision, then use `python tools/apply_areal_patch.py PATH` to install the adapter; `--verify` checks the consumed file hashes. The submitted campaign uses a frozen Nibble source snapshot.
 
-    ssh -N -L 8765:127.0.0.1:8765 della-pli
+## Interface
 
-Supply the same token securely via NIBBLE_TOKEN. The laptop needs neither CUDA
-nor AReaL. SSH establishes access; it does not allocate cluster GPUs.
+`POST /v1/plan` validates placement; `POST /v1/jobs` returns immediately. Status, events, cancellation and reports are under `/v1/jobs/{id}`. A SQLite queue persists status; timeouts terminate owned subprocess trees. Interrupted jobs are marked interrupted on restart, not silently replayed. Tokens come from `NIBBLE_TOKEN`; bind the server to loopback and use SSH forwarding.
 
-## SDK
+The one-GPU `login_pilot` retains tiny limits and synchronous exact recomputation. The two-GPU `local` profile and four-GPU `slurm` profile separate rollout/trainer placement. Arbitrary clusters, provisioning, optimizer resume and multi-tenant isolation are outside this MVP. Cado records execution outcomes and resource observations; it does not establish causal interpretability.
 
-    from nibble import Client
+## Checks
 
-    client = Client()
-    options = dict(
-        model="qwen3-0.6b",
-        dataset="digits",
-        environment="math",
-        reward="digit_preference",
-        max_gpus=1,
-        rollouts_per_prompt=2,
-        prompts_per_step=2,
-        max_steps=1,
-        max_new_tokens=16,
-        audit_on=True,
-    )
+Run CPU checks using the configured AReaL environment with Nibble `src`, the patched source tree, and Cado on `PYTHONPATH`, and `CUDA_VISIBLE_DEVICES=""`:
 
-    print(client.plan(**options))  # No GPU process launched
-    job = client.train(**options)  # Returns immediately
-    print(job.id)
-    print(job.wait(timeout=240))
-    print(job.report())
+```bash
+python -m pytest tests -q
+python -m ruff check src tests tools/apply_areal_patch.py
+```
 
-The synthetic digit task rewards the first generated digit divided by nine, even in prose. It tests the environment,
-reward, optimizer and audit wiring. It is not GSM8K accuracy or useful model training.
-A registered gsm8k dataset/reward pair is also available, but short completions
-may all receive zero reward.
-
-max_steps means optimizer steps. rollouts_per_prompt means GRPO group size.
-max_concurrent_rollouts controls concurrency, not the total number of completions.
-AReaL may generate extra prefetched rollouts; audited rollouts need not equal
-only the samples consumed by optimizer steps.
-
-The pilot caps requests at 2 steps, 2 prompts per step and 64 output tokens.
-The wall-time budget includes startup. A client wait timeout does not cancel a job;
-use job.cancel() explicitly.
-
-## Bring your own environment
-
-Edit the administrator-owned JSON identified by NIBBLE_RUNNER_CONFIG.
-Register model snapshot paths, dataset factories (module:function), reward
-functions and compatible AReaL workflow classes. HTTP accepts registered names,
-not arbitrary import paths, shell commands, credentials or package uploads.
-
-A dataset factory receives tokenizer, count and max_prompt_tokens, returning
-a Hugging Face Dataset. The built-in workflow expects messages and reward fields.
-A reward receives AReaL's prompt/completions/token IDs and task fields, returning
-one finite scalar. Multi-turn environments require their own registered AReaL
-workflow. This is a trusted single-user runner, not a sandbox for hostile code.
-
-For another host, use [the runner template](examples/runner.example.json), point it
-at an existing compatible AReaL Python environment, and set a random NIBBLE_TOKEN
-of at least 24 characters. Install optional server dependencies:
-
-    pip install -e '.[server]'
-
-Cado and the AReaL/SGLang forks are separate pinned dependencies.
-
-## Execution profiles
-
-login_pilot shares one physical GPU between a small actor and rollout server,
-uses disk weight updates and synchronous RL. The GPU process check immediately
-before launch is a courtesy check; it cannot reserve a shared login GPU.
-
-local plans two physical GPUs (one actor, one rollout), provided the runner has
-two configured devices and max_gpus >= 2. Set max_staleness > 0 for bounded
-asynchronous RL. This profile is implemented but not validated by the one-GPU pilot.
-Slurm submission and cloud GPU provisioning are not implemented.
-
-API background jobs and overlapping RL computation are different capabilities.
-
-## Cache translation and score centering
-
-The optional two-GPU map profile passes through the existing fork's retention and
-mapper options. It requires a pre-fitted registry inside the project root.
-Missing mappers fall back to recomputation in the fork. This MVP does not fit
-mappers, validate arbitrary checkpoint-pair identities, or claim map mode is faster.
-Inspect actual KV events before counting translated requests.
-
-score_centering=True raises a validation error. The paper needs the actual
-sampler's top-k distribution; the current batch transports only selected-token
-logprobs. Implementing the loss alone would not be a correct integration.
-
-## Recovery and artifacts
-
-Jobs write spec, placement plan, AReaL config, worker log, events, report and native
-artifacts beneath state/runs/JOB_ID. Direct launches use state/direct/JOB_ID.
-
-Failure and cancellation terminate the owned worker process tree. Descendants are
-tracked by process identity, including children with separate sessions.
-Cleanup never kills by username or a shared process name.
-
-A restart marks in-flight jobs interrupted and does not replay optimizer steps.
-Inspect artifacts and surviving GPU processes before submitting again.
-Full optimizer resume is not implemented. Registering saved weights starts a new run.
-
-Cado records successful/failed trajectories. Any episode failure aborts; it is never
-silently assigned zero reward. The short pilot does not enable live integrity
-alarms or claim mechanistic interpretability.
-
-## Minimal verification
-
-    source work/env.sh
-    "$NIBBLE_PYTHON" -m pytest -q tests
-
-Tests cover invalid budgets, auth, unknown plugins, cancellation and restart
-handling without GPU use. GPU runs are explicit:
-
-    "$NIBBLE_PYTHON" -m nibble.cli direct work/pilot.json
-
-Compare an identical spec through direct launch and SDK to measure interface
-overhead. A meaningful async speed comparison also requires two allocated GPUs,
-matched work, multiple steps and held-out quality.
+GPU jobs are integration experiments, not part of this test suite.

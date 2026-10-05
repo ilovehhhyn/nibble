@@ -55,7 +55,8 @@ def create_app(runtime=None, start_runner=True):
             "environments": list(runtime.environments),
             "rewards": list(runtime.rewards),
             "algorithms": ["grpo"],
-            "score_centering": False,
+            "score_centering": (runtime.areal_root / "NIBBLE_PATCHED").is_file(),
+            "objectives": ["legacy_grpo", "group_pg_tis"],
             "resume": False,
             "managed_gpu_provisioning": False,
         }

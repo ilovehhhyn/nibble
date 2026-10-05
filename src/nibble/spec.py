@@ -27,24 +27,27 @@ class TrainSpec:
     cache_mode: str = "recompute"
     mapper_registry: str | None = None
     score_centering: bool = False
+    objective: str = "legacy_grpo"
+    execution: str = "areal"
+    fit_mappers: bool = False
 
     def __post_init__(self):
         for name, low, high in [
             ("max_gpus", 1, 8),
             ("rollouts_per_prompt", 2, 8),
             ("prompts_per_step", 1, 8),
-            ("max_steps", 1, 4),
-            ("max_new_tokens", 1, 256),
+            ("max_steps", 1, 15),
+            ("max_new_tokens", 1, 1024),
             ("max_prompt_tokens", 16, 1024),
-            ("max_concurrent_rollouts", 1, 8),
+            ("max_concurrent_rollouts", 1, 64),
             ("max_staleness", 0, 2),
             ("seed", 0, 2**31 - 1),
-            ("timeout_seconds", 10, 240),
+            ("timeout_seconds", 10, 1800),
         ]:
             value = getattr(self, name)
             if type(value) is not int or not low <= value <= high:
                 raise ValueError(f"{name} must be an integer in [{low}, {high}]")
-        for name in ("audit_on", "score_centering"):
+        for name in ("audit_on", "score_centering", "fit_mappers"):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be boolean")
         for name in (
@@ -67,22 +70,45 @@ class TrainSpec:
             raise ValueError("mapper_registry must be a string or null")
         if self.algorithm != "grpo":
             raise ValueError("this MVP implements GRPO only")
-        if self.target not in ("login_pilot", "local"):
+        if self.target not in ("login_pilot", "local", "slurm"):
             raise ValueError(
-                "target must be login_pilot or local; Slurm submission is not implemented"
+                "target must be login_pilot, local, or slurm (inside an allocation)"
             )
         if self.cache_mode not in ("recompute", "map"):
             raise ValueError("cache_mode must be recompute or map")
-        if self.cache_mode == "map" and not self.mapper_registry:
+        if self.cache_mode == "map" and not (self.mapper_registry or self.fit_mappers):
             raise ValueError(
                 "map mode requires a pre-fitted mapper_registry; no fitting is launched"
             )
         if self.cache_mode == "recompute" and self.mapper_registry is not None:
             raise ValueError("mapper_registry only applies to map mode")
-        if self.score_centering:
+        if self.objective not in ("legacy_grpo", "group_pg_tis"):
+            raise ValueError("objective must be legacy_grpo or group_pg_tis")
+        if self.execution not in ("areal", "standalone_sync"):
+            raise ValueError("execution must be areal or standalone_sync")
+        if self.score_centering and self.objective != "group_pg_tis":
             raise ValueError(
-                "score centering is not wired: AReaL's batch lacks sampler top-k probabilities"
+                "score centering requires the paper group_pg_tis objective"
             )
+        if self.target == "slurm" and self.max_gpus != 4:
+            raise ValueError("the Slurm comparison requires exactly four GPUs")
+        if self.fit_mappers and (
+            self.target != "slurm" or self.cache_mode != "map" or self.mapper_registry
+        ):
+            raise ValueError(
+                "live fitting requires slurm map mode with a fresh automatic registry"
+            )
+        if self.execution == "standalone_sync" and (
+            self.target != "slurm"
+            or self.max_staleness
+            or self.score_centering
+            or self.cache_mode != "recompute"
+        ):
+            raise ValueError(
+                "standalone_sync requires slurm, zero staleness, recompute, no SC"
+            )
+        if self.target != "slurm" and self.timeout_seconds > 240:
+            raise ValueError("longer jobs require a Slurm allocation")
         if (
             isinstance(self.learning_rate, bool)
             or not isinstance(self.learning_rate, (int, float))
@@ -93,6 +119,7 @@ class TrainSpec:
         if self.target == "login_pilot":
             if (
                 self.max_gpus != 1
+                or self.score_centering
                 or self.max_staleness != 0
                 or self.cache_mode != "recompute"
             ):

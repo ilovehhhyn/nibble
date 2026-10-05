@@ -13,7 +13,17 @@ def main():
     args = parser.parse_args()
     runtime = Runtime.load(require_token=False)
     spec = TrainSpec.from_dict(json.loads((args.run_dir / "spec.json").read_text()))
-    from .native import run
+    import os
+
+    os.environ["NIBBLE_OBJECTIVE"] = spec.objective
+    os.environ["NIBBLE_SCORE_CENTERING"] = "1" if spec.score_centering else "0"
+    os.environ["NIBBLE_MAPPER_GPU"] = (
+        runtime.gpu_ids[3] if spec.target == "slurm" else ""
+    )
+    if spec.execution == "standalone_sync":
+        from .sync_baseline import run
+    else:
+        from .native import run
 
     run(spec, runtime, args.run_dir)
 

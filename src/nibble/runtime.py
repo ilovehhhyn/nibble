@@ -52,7 +52,18 @@ class Runtime:
                 )
         if not Path(self.models[spec.model]).is_dir():
             raise ValueError("registered model snapshot is unavailable")
-        required = 1 if spec.target == "login_pilot" else 2
+        required = (
+            1 if spec.target == "login_pilot" else (4 if spec.target == "slurm" else 2)
+        )
+        if spec.target == "slurm" and not os.environ.get("SLURM_JOB_ID"):
+            raise ValueError("slurm jobs must run inside a scheduler allocation")
+        if (
+            spec.objective == "group_pg_tis"
+            and not (self.areal_root / "NIBBLE_PATCHED").is_file()
+        ):
+            raise ValueError(
+                "score centering requires the pinned, patched AReaL adapter"
+            )
         if required > len(self.gpu_ids) or required > spec.max_gpus:
             raise ValueError(
                 f"profile needs {required} configured GPUs; cap/available devices are insufficient"
@@ -74,6 +85,9 @@ class Runtime:
             else "bounded-asynchronous",
             "api_execution": "background job",
             "weight_update": "disk",
+            "objective": spec.objective,
+            "score_centering": spec.score_centering,
+            "reserved_fitter_gpu": self.gpu_ids[3] if required == 4 else None,
             "cache_mode": spec.cache_mode,
             "note": "No speed or learning-quality claim follows from a tiny pilot.",
         }
@@ -93,7 +107,9 @@ class Runtime:
         env["TOKENIZERS_PARALLELISM"] = "false"
         env["HF_HUB_OFFLINE"] = "1"
         env["HF_DATASETS_OFFLINE"] = "1"
-        env["AREAL_CACHE_DIR"] = str(self.root / "work" / "cache" / "areal")
+        env["AREAL_CACHE_DIR"] = os.environ.get(
+            "NIBBLE_CACHE_ROOT", str(self.root / "work" / "cache" / "areal")
+        )
         env["NIBBLE_JOB_DIR"] = str(run_dir)
         env["PYTHONUNBUFFERED"] = "1"
         for key in ("NIBBLE_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):

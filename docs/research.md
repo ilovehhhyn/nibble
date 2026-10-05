@@ -1,3 +1,5 @@
+> Historical notes for the initial one-GPU MVP. The current multi-GPU implementation and score-centering protocol are in [async-comparison.md](async-comparison.md).
+
 # Sources read before implementation
 
 AReaL: Helen's KV-cache fork at local revision 040cbfd5 and Della AReaL-arm,
