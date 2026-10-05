@@ -23,3 +23,7 @@ All three arms completed, including API submission, score-centering, mapper fitt
 ## Corrected packed-attention validation
 
 Job 15070081 (griffith), four GPUs, one-hour cap, three matched updates per arm. Frozen revision 4dcd0d4c43dded6ee3ccfddff33689fc7c639cb2. Uses separate v3 adapter source; all prior results remain preserved. Eleven affected CPU tests passed, including packed-versus-separate Qwen2 logits and gradients; lint and clean-base patch application with seven source hashes passed. Results pending under state/campaign-15070081. The first-step train/sampler log-probability gap is an explicit numerical acceptance check.
+
+## Verified completion
+
+Job 15070081 completed all three arms and held-out evaluations. The corrected first-step logprob gaps are 0.021109 (direct) and 0.018972 (API). See [verified results](comparison-15070081.md). API feasibility passed; net speedup did not: mapper fitting is included in the slower API training time.
