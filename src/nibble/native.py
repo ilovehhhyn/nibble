@@ -180,7 +180,11 @@ def gsm8k_dataset(*, tokenizer, count, max_prompt_tokens):
             }
         ]
         ids = tokenizer.apply_chat_template(
-            messages, tokenize=True, add_generation_prompt=True, enable_thinking=False
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            enable_thinking=False,
+            return_dict=False,
         )
         if len(ids) <= max_prompt_tokens:
             rows.append({"messages": messages, "answer": item["answer"]})
@@ -210,6 +214,7 @@ def digit_dataset(*, tokenizer, count, max_prompt_tokens):
         tokenize=True,
         add_generation_prompt=True,
         enable_thinking=False,
+        return_dict=False,
     )
     if len(ids) > max_prompt_tokens:
         raise ValueError("digit prompt exceeds max_prompt_tokens")
@@ -256,7 +261,11 @@ def benchmark_dataset(*, tokenizer, count, max_prompt_tokens):
             }
         ]
         ids = tokenizer.apply_chat_template(
-            messages, tokenize=True, add_generation_prompt=True, enable_thinking=False
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            enable_thinking=False,
+            return_dict=False,
         )
         if len(ids) <= max_prompt_tokens:
             rows.append(

@@ -52,3 +52,7 @@ The Claude session's previous 2–3.4× result was resume latency on unchanged-w
 Each arm writes `report.json`, `report.md`, `worker.log`, Cado `audit/records`, checkpoints, and native timing. The mapped arm also writes mapper logs, fit reports, registries and `kv-events.*.jsonl`. The campaign produces `comparison.json` and `comparison.md`, preserving failures and incomplete arms.
 
 Compare held-out reward and the common uncentered-TIS diagnostic, not the absolute centered-loss value against another loss. Report initialization, training, teardown, total time, and API submission latency separately. A one-seed 15-step pilot cannot establish convergence, statistical quality equivalence, or time to a target score. Arm 3 bundles API, mapping and centering, so its difference cannot identify the individual contribution of each. Separate ablations would require additional authorized compute.
+
+## Corrected end-to-end validation
+
+The first rerun after job 15011566 uses `NIBBLE_MAX_STEPS=3` to complete all three arms before spending on the 15-step comparison. The model, seed, prompts per update (8), responses per prompt (4), 1024-token generation limit, official 32-prompt held-out evaluation, Cado auditing, score-centering objective and 200-prefix mapper fit stay fixed. This run measures implementation feasibility and short-run accuracy/latency; it cannot establish convergence. The default remains 15 steps. The known-bad duplicate 15059125 is held while the corrected immutable release is prepared.

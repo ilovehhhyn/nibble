@@ -42,4 +42,4 @@ CONFIG
 CAMPAIGN="$NIBBLE_PROJECT_ROOT/state/campaign-$SLURM_JOB_ID"
 trap 'test ! -f "$CAMPAIGN/campaign.json" || "$NIBBLE_PYTHON" -m nibble.campaign "$CAMPAIGN" --summarize' EXIT
 cd "$NIBBLE_PROJECT_ROOT"
-"$NIBBLE_PYTHON" -m nibble.campaign "$CAMPAIGN"
+"$NIBBLE_PYTHON" -m nibble.campaign "$CAMPAIGN" --max-steps "${NIBBLE_MAX_STEPS:-15}"

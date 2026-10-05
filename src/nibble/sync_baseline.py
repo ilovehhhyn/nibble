@@ -171,7 +171,11 @@ def _gen(base_url, input_ids, max_new_tokens, tokenizer):
 
 def _prompt_ids(tokenizer, messages, max_prompt_tokens):
     ids = tokenizer.apply_chat_template(
-        messages, tokenize=True, add_generation_prompt=True, enable_thinking=False
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        enable_thinking=False,
+        return_dict=False,
     )
     if hasattr(ids, "tolist"):
         ids = ids.tolist()

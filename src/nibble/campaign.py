@@ -103,10 +103,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("root", type=Path)
     parser.add_argument("--summarize", action="store_true")
+    parser.add_argument("--max-steps", type=int, default=15)
     args = parser.parse_args()
     if args.summarize:
         summarize(args.root)
         return
+    if not 1 <= args.max_steps <= 15:
+        parser.error("--max-steps must be between 1 and 15")
     if not os.environ.get("SLURM_JOB_ID"):
         raise RuntimeError("campaign requires a Slurm GPU allocation")
     args.root.mkdir(parents=True, exist_ok=False)
@@ -119,7 +122,7 @@ def main():
         reward="gsm8k-strict",
         target="slurm",
         max_gpus=4,
-        max_steps=15,
+        max_steps=args.max_steps,
         prompts_per_step=8,
         rollouts_per_prompt=4,
         max_new_tokens=1024,
@@ -129,7 +132,7 @@ def main():
         timeout_seconds=ARM_TIMEOUT_SECONDS,
         objective="group_pg_tis",
     )
-    # Cost-bounded default: original 1.5B workload, 15 updates, one seed.
+    # Keep the original workload; shorter runs validate the entire path cheaply.
     arms = [
         (
             "standalone-sync",
