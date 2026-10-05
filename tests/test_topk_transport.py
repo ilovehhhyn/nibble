@@ -35,6 +35,7 @@ def test_score_centering_request_requests_top128_and_requires_supported_sampling
     monkeypatch,
 ):
     monkeypatch.setenv("NIBBLE_SCORE_CENTERING", "1")
+    monkeypatch.setenv("NIBBLE_OBJECTIVE", "group_pg_tis")
     backend = SGLangBackend()
     request = ModelRequest(
         input_ids=[1, 2],
@@ -47,6 +48,7 @@ def test_score_centering_request_requests_top128_and_requires_supported_sampling
     assert http_request.payload["sampling_params"]["temperature"] == 1.0
     assert http_request.payload["sampling_params"]["top_p"] == 1.0
     assert http_request.payload["sampling_params"]["top_k"] == -1
+    assert http_request.payload["sampling_params"]["repetition_penalty"] == 1.0
 
     request.gconfig.top_p = 0.9
     with pytest.raises(ValueError, match="NIBBLE_SCORE_CENTERING=1 requires sampling"):

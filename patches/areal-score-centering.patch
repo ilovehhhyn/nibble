@@ -130,17 +130,27 @@
          stop_token_ids = gconfig.stop_token_ids
          stop = gconfig.stop
  
-@@ -99,6 +125,9 @@
+@@ -86,6 +112,9 @@
+             "skip_special_tokens": gconfig.skip_special_tokens,
+             "frequency_penalty": gconfig.frequency_penalty,
+         }
++        if os.environ.get("NIBBLE_OBJECTIVE") == "group_pg_tis":
++            # Do not inherit repetition_penalty from model generation defaults.
++            sample_params["repetition_penalty"] = 1.0
+         if stop:
+             sample_params["stop"] = stop
+         if gconfig.seed is not None:
+@@ -98,6 +127,9 @@
+             "return_logprob": True,
              "stream": False,
          }
- 
++
 +        if _score_centering_enabled():
 +            payload["top_logprobs_num"] = NIBBLE_SAMPLER_TOP_K
-+
+ 
          # Add return_routed_experts to payload if set
          if req.metadata.get("return_routed_experts", False):
-             payload["return_routed_experts"] = True
-@@ -146,10 +175,36 @@
+@@ -146,10 +178,36 @@
                  routed_experts=routed_experts,
                  spec_accept_rate=spec_accept_rate,
                  spec_accept_length=spec_accept_length,
@@ -181,7 +191,7 @@
  
          return HttpGenerationResult(
              output_tokens=output_tokens,
-@@ -158,6 +213,8 @@
+@@ -158,6 +216,8 @@
              routed_experts=routed_experts,
              spec_accept_rate=spec_accept_rate,
              spec_accept_length=spec_accept_length,

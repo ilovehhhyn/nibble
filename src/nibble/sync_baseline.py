@@ -130,6 +130,14 @@ def _terminate(proc):
             pass
 
 
+def _update_weights(base_url, model_path):
+    payload = {"model_path": str(model_path), "load_format": "auto"}
+    result = _request(base_url + "/update_weights_from_disk", payload, timeout=600)
+    if isinstance(result, dict) and result.get("success") is False:
+        raise RuntimeError(f"SGLang weight update failed at {base_url}: {result}")
+    return result
+
+
 def _gen(base_url, input_ids, max_new_tokens, tokenizer):
     result = _request(
         base_url + "/generate",
@@ -138,6 +146,8 @@ def _gen(base_url, input_ids, max_new_tokens, tokenizer):
             "sampling_params": {
                 "temperature": 1.0,
                 "top_p": 1.0,
+                "top_k": -1,
+                "repetition_penalty": 1.0,
                 "max_new_tokens": max_new_tokens,
             },
             "return_logprob": True,
@@ -484,15 +494,7 @@ def run(spec, runtime, run_dir):
                 ckpt = run_dir / "checkpoints" / f"step-{step + 1:04d}"
                 _save_hf(model, tokenizer, ckpt)
                 for base in bases:
-                    update = _request(
-                        base + "/update_weights_from_disk",
-                        {"model_path": str(ckpt), "load_format": "hf"},
-                        timeout=600,
-                    )
-                    if isinstance(update, dict) and update.get("success") is False:
-                        raise RuntimeError(
-                            f"SGLang weight update failed at {base}: {update}"
-                        )
+                    _update_weights(base, ckpt)
                 update_seconds = time.perf_counter() - update_start
                 elapsed = time.perf_counter() - step_start
                 rec = {

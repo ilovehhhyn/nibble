@@ -12,7 +12,7 @@
     },
     "areal/engine/sglang_remote.py": {
       "original": "0b5ff8cc65d26af2ebf385e9c5af1f592624c0786764bc9d19da715637811407",
-      "patched": "390f660235ed0bc218fb2a4588fd7108e248425017f0c79a47c03f61cd463744"
+      "patched": "e42091741d786b7fb756a1008a1f9e26a0806c746d1e1b159f9cde3b755d3d5a"
     },
     "areal/infra/remote_inf_engine.py": {
       "original": "25fa9736b90b70089240ce96a13ec4c2a2f406723994d14093cfe3db4b0ecc3f",

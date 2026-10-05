@@ -86,3 +86,67 @@ def test_prompt_ids_requests_a_list_from_tokenizer():
             return [42, 43, 44]
 
     assert _prompt_ids(MappingByDefaultTokenizer(), [], 3) == [42, 43, 44]
+
+
+def test_generation_request_sets_unfiltered_sampling_params(monkeypatch):
+    import nibble.sync_baseline as baseline
+
+    captured = {}
+
+    def fake_request(url, payload, timeout):
+        captured.update(payload)
+        return {
+            "output_ids": [17],
+            "meta_info": {"output_token_logprobs": [[-0.25, 17, None]]},
+        }
+
+    class Tokenizer:
+        @staticmethod
+        def decode(ids, skip_special_tokens):
+            return "decoded"
+
+    monkeypatch.setattr(baseline, "_request", fake_request)
+    output = baseline._gen("http://local", [1, 2], 64, Tokenizer())
+    assert captured["sampling_params"] == {
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "top_k": -1,
+        "repetition_penalty": 1.0,
+        "max_new_tokens": 64,
+    }
+    assert output["text"] == "decoded"
+    assert output["behavior_logprobs"] == [-0.25]
+
+
+def test_weight_update_uses_sglang_auto_format_and_hf_checkpoint(monkeypatch, tmp_path):
+    from sglang.srt.configs.load_config import LoadConfig, LoadFormat
+    import nibble.sync_baseline as baseline
+
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "model.safetensors").write_bytes(b"")
+    calls = []
+
+    def fake_request(url, payload, timeout):
+        calls.append((url, payload, timeout))
+        assert url == "http://local/update_weights_from_disk"
+        assert payload["model_path"] == str(checkpoint)
+        assert (Path(payload["model_path"]) / "model.safetensors").is_file()
+        assert (
+            LoadConfig(load_format=payload["load_format"]).load_format
+            is LoadFormat.AUTO
+        )
+        return {"success": True, "message": "weights updated"}
+
+    from pathlib import Path
+
+    monkeypatch.setattr(baseline, "_request", fake_request)
+    result = baseline._update_weights("http://local", checkpoint)
+    assert result["success"] is True
+    assert calls == [
+        (
+            "http://local/update_weights_from_disk",
+            {"model_path": str(checkpoint), "load_format": "auto"},
+            600,
+        )
+    ]
