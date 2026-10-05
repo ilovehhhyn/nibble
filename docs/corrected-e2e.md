@@ -19,3 +19,7 @@ The next release uses the actual supported auto load format. It also explicitly 
 ## Numerical validity repair after 15068076
 
 All three arms completed, including API submission, score-centering, mapper fitting and real mapped resumes. However, the initial native train/sampler log-probability gap was approximately 4.5 nats. CPU inspection confirmed that packed SDPA inputs with null attention masks allow cross-example attention. A tiny Qwen2 reference showed maximum logit error 0.0769967 with the original packing and 0.0 with an explicit per-sequence causal mask. The previous results (sync 23/32, direct 21/32, API 20/32; training 86.95/77.63/163.59 seconds) are provisional and cannot validate the intended RL comparison. The corrected adapter preserves SDPA but supplies a block causal mask; logits and gradients are checked against separately evaluated sequences. Report parsing is also corrected for /avg metrics and baseline gradients. Historical v2 source and all reports are preserved.
+
+## Corrected packed-attention validation
+
+Job 15070081 (griffith), four GPUs, one-hour cap, three matched updates per arm. Frozen revision 4dcd0d4c43dded6ee3ccfddff33689fc7c639cb2. Uses separate v3 adapter source; all prior results remain preserved. Eleven affected CPU tests passed, including packed-versus-separate Qwen2 logits and gradients; lint and clean-base patch application with seven source hashes passed. Results pending under state/campaign-15070081. The first-step train/sampler log-probability gap is an explicit numerical acceptance check.
