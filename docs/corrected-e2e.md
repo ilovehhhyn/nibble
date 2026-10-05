@@ -11,3 +11,7 @@ Results are pending GPU execution. Job 15059125 with the faulty release is held 
 The tokenizer fix passed real rollout generation. Job ran for 193 seconds, then the synchronous baseline failed at its first disk weight update: the SGLang scheduler rejects load_format=hf (ValueError: hf is not a valid LoadFormat). A first optimizer update and checkpoint step-0001 were produced, but the step metric was not committed because reloading failed; async/API arms were not launched. Logs remain under state/campaign-15067116.
 
 The next release uses the actual supported auto load format. It also explicitly disables model-generation defaults for top-k and repetition penalty: top_k=-1 and repetition_penalty=1.0 in both baseline and group_pg_tis AReaL requests. Previous baseline generation inherited top_k=20 and all arms otherwise inherited repetition_penalty=1.1; that mismatch would invalidate a matched sampling comparison. The new AReaL adapter is a separate source copy under work/deps/areal-040cbfd5-nibble-v2, preserving the prior source and reports.
+
+## Current validation job
+
+15068076 (griffith), four GPUs, one-hour cap, three matched updates per arm. Frozen revision 61e1d0c26ad6ce8cafc921a83483ae9ae8bed19e. The actual installed SGLang loader validates auto in the regression. Eight baseline checks and ten affected adapter/config/loss checks passed; patch application and seven source hashes verified. The obsolete duplicate 15059125 was cancelled when 15067116 started. Results pending under state/campaign-15068076.
