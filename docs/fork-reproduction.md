@@ -27,3 +27,17 @@ After all three fork arms and the score-centering cost job, one GPU replays all 
 Environment/reward plugins, training objectives and score correction are separate. The source-faithful PPO route executes the fork's loss unchanged; the existing GRPO/group-PG and score_centering.py adapters remain separately available. DPO requires chosen/rejected preference pairs and reference log-probabilities, not a reward-function substitution (see https://arxiv.org/html/2305.18290v3). DPO training and DPO score-centering are not advertised as implemented. The reproduction prioritizes verified original behavior rather than a fake universal objective switch.
 
 CPU preflight: full existing suite, original-default config comparisons, packed logits/gradient equivalence, exact fitter copies, source hashes, patch verification, CLI compilation and shell syntax. Queue IDs and frozen revision are appended after submission. GPU results are pending and no speed/accuracy improvement is claimed.
+
+## Submitted serial chain
+
+Frozen revision `825fd01612b4246fbd521fb08ef7c5001bf44fc4`. All jobs use griffith and A100-80GB PCIe constraints for matched GPU type.
+
+| Job | Workload | GPUs | Dependency |
+|---|---|---:|---|
+| 15205429 | fork-exact | 3 | none |
+| 15205430 | api-exact | 3 | 15205429 |
+| 15205431 | api-map | 4 | 15205430 |
+| 15205432 | score-centering | 1 | 15205431 |
+| 15205433 | transfer15 | 1 | 15205432 |
+
+Only one job can run at a time; afterok dependencies prevent spending on downstream work after a failure. Detailed records: work/fork-submission.json.
