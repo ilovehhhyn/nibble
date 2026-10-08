@@ -95,3 +95,16 @@ Replacement 15210056 passed the dataset preflight and initialized training worke
 The existing PyTorch NVIDIA wheel already contains the required headers. The repair exposes that exact directory through FlashInfer's supported extra compiler flags, preserving its sampling backend and all training settings. FlashInfer/Triton/Torch/driver caches now stay under Nibble work/cache. The actual sampling header's full dependency chain passed nvcc preprocessing on CPU, without GPU execution. The API runner also stops immediately when a fatal SGLang scheduler exception and child SIGQUIT appear, including across log read boundaries; ordinary rollout rejection does not trigger it.
 
 Compiler initialization/caching costs remain distinct from steady-state trainer latency. Failed allocations are reported separately rather than hidden from total experiment costs. All remaining requests had never started and will use the corrected archive under the same resource limits.
+
+### Compiler-corrected requests
+
+Frozen source: `90a4e53c6a96d7774a059dc6c61985676b7535ac`. All replacement requests retain the same resources/settings; previous unstarted requests 15210057–15210064 were cancelled with zero elapsed allocation.
+
+| Arm | PPO job | GRPO job | GPUs |
+|---|---:|---:|---:|
+| sync | 15210965 | 15210969 | 3 |
+| areal | 15210962 | 15210966 | 3 |
+| api-map | 15210963 | 15210967 | 4 |
+| api-map-sc | 15210964 | 15210968 | 4 |
+
+Transfer-only replay `15210970` follows the eight runs and uses `15210962` checkpoints. Compiler and log-monitor fixes passed focused CPU tests and independent review; actual corrected GPU training remains pending. Durable history: `work/matrix-submission-before-curand-15210056.json`, `work/failure-15210056.json`.
