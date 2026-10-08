@@ -32,47 +32,67 @@ def main():
     )
     test = load_dataset("openai/gsm8k", "main", split="test")
     records = []
-    for begin in range(0, args.count, 4):
-        rows = [test[i] for i in range(begin, min(begin + 4, args.count))]
-        texts = [
-            tokenizer.apply_chat_template(
-                [
-                    {
-                        "role": "user",
-                        "content": r["question"] + PROMPT_SUFFIX,
-                    }
-                ],
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,
-            )
-            for r in rows
-        ]
-        inputs = tokenizer(texts, return_tensors="pt", padding=True).to("cuda")
-        with torch.inference_mode():
-            output = model.generate(
-                **inputs,
-                max_new_tokens=args.max_new_tokens,
-                do_sample=False,
-                pad_token_id=tokenizer.pad_token_id,
-            )
-        for offset, (row, tokens) in enumerate(
-            zip(rows, output[:, inputs["input_ids"].shape[1] :])
-        ):
-            ids = tokens.tolist()
-            if tokenizer.eos_token_id in ids:
-                ids = ids[: ids.index(tokenizer.eos_token_id) + 1]
-            text = tokenizer.decode(ids)
-            reward = math_reward(text, row["answer"])
-            records.append(
-                {
-                    "test_index": begin + offset,
-                    "reward": float(reward),
-                    "output_tokens": len(ids),
-                    "truncated": len(ids) >= args.max_new_tokens,
-                    "completion": text,
-                }
-            )
+    from .audit import audited_run
+    import tplane
+
+    with audited_run(
+        args.output.parent / (args.output.stem + "-cado") / "audit"
+    ) as audit:
+        for begin in range(0, args.count, 4):
+            with audit.unit(f"batch-{begin}", kind=tplane.UnitKind.EVAL) as unit:
+                unit.tag("checkpoint", args.checkpoint)
+                unit.tag("test_start", str(begin))
+                unit.tag("split", "official-test")
+                with unit.stage(tplane.Stage.ROLLOUT):
+                    rows = [test[i] for i in range(begin, min(begin + 4, args.count))]
+                    texts = [
+                        tokenizer.apply_chat_template(
+                            [
+                                {
+                                    "role": "user",
+                                    "content": r["question"] + PROMPT_SUFFIX,
+                                }
+                            ],
+                            tokenize=False,
+                            add_generation_prompt=True,
+                            enable_thinking=False,
+                        )
+                        for r in rows
+                    ]
+                    inputs = tokenizer(texts, return_tensors="pt", padding=True).to(
+                        "cuda"
+                    )
+                    with torch.inference_mode():
+                        output = model.generate(
+                            **inputs,
+                            max_new_tokens=args.max_new_tokens,
+                            do_sample=False,
+                            pad_token_id=tokenizer.pad_token_id,
+                        )
+                with unit.stage(tplane.Stage.GRADE):
+                    for offset, (row, tokens) in enumerate(
+                        zip(rows, output[:, inputs["input_ids"].shape[1] :])
+                    ):
+                        ids = tokens.tolist()
+                        if tokenizer.eos_token_id in ids:
+                            ids = ids[: ids.index(tokenizer.eos_token_id) + 1]
+                        text = tokenizer.decode(ids)
+                        reward = math_reward(text, row["answer"])
+                        records.append(
+                            {
+                                "test_index": begin + offset,
+                                "reward": float(reward),
+                                "output_tokens": len(ids),
+                                "truncated": len(ids) >= args.max_new_tokens,
+                                "completion": text,
+                            }
+                        )
+                batch = records[-len(rows) :]
+                unit.tokens(
+                    tokens_in=int(inputs["attention_mask"].sum().item()),
+                    tokens_out=sum(r["output_tokens"] for r in batch),
+                )
+                unit.reward(sum(r["reward"] for r in batch) / len(batch))
     atomic_json(
         args.output,
         {

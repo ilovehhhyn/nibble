@@ -19,6 +19,9 @@ export NIBBLE_SPLITS="$NIBBLE_PROJECT_ROOT/work/data/splits.json"
 export NIBBLE_CALIBRATION="$NIBBLE_PROJECT_ROOT/work/data/calibration-qwen25-1p5b.jsonl"
 export NIBBLE_CACHE_ROOT="$NIBBLE_PROJECT_ROOT/work/cache/areal"
 export PYTHONPATH="${NIBBLE_CODE_ROOT:-$NIBBLE_PROJECT_ROOT}/src:$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v3:$NIBBLE_PROJECT_ROOT/../cado/tplane/src"
+if [ "${NIBBLE_CADO_OUTER:-0}" != 1 ]; then
+  exec "$NIBBLE_PYTHON" -m nibble.audit "$NIBBLE_PROJECT_ROOT/state/allocation-$SLURM_JOB_ID/audit" -- bash "$NIBBLE_CODE_ROOT/jobs/compare.sbatch"
+fi
 export NIBBLE_RUNNER_CONFIG="$NIBBLE_PROJECT_ROOT/work/runner-$SLURM_JOB_ID.json"
 export PATH="$(dirname "$NIBBLE_PYTHON"):$PATH"
 export OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2

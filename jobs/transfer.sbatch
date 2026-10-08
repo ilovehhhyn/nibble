@@ -13,6 +13,9 @@
 set -euo pipefail
 source "$NIBBLE_PROJECT_ROOT/work/env.sh"
 export PYTHONPATH="$NIBBLE_CODE_ROOT/src:$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v6:$NIBBLE_PROJECT_ROOT/../cado/tplane/src"
+if [ "${NIBBLE_CADO_OUTER:-0}" != 1 ]; then
+  exec "$NIBBLE_PYTHON" -m nibble.audit "$NIBBLE_PROJECT_ROOT/state/allocation-$SLURM_JOB_ID/audit" -- bash "$NIBBLE_CODE_ROOT/jobs/transfer.sbatch"
+fi
 "$NIBBLE_PYTHON" -m nibble.cuda_build "$NIBBLE_PROJECT_ROOT" "$NIBBLE_PROJECT_ROOT/work/cuda-build-$SLURM_JOB_ID.sh"
 source "$NIBBLE_PROJECT_ROOT/work/cuda-build-$SLURM_JOB_ID.sh"
 MODEL="$NIBBLE_PROJECT_ROOT/../hf_cache/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots/989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
@@ -26,3 +29,4 @@ CONFIG
 )
 export COUNT=64
 bash "$NIBBLE_CODE_ROOT/tools/transfer/login_replay.sh" "$CKPT" "$MODEL" 15 "$NIBBLE_PROJECT_ROOT/../areal-kv/results/calibration-v0.jsonl" "$NIBBLE_PROJECT_ROOT/state/transfer-$SLURM_JOB_ID"
+"$NIBBLE_PYTHON" -m nibble.validate_transfer "$NIBBLE_PROJECT_ROOT/state/transfer-$SLURM_JOB_ID" --updates 15 --count 64

@@ -13,6 +13,9 @@
 set -euo pipefail
 source "$NIBBLE_PROJECT_ROOT/work/env.sh"
 export PYTHONPATH="$NIBBLE_CODE_ROOT/src:$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v4:$NIBBLE_PROJECT_ROOT/../cado/tplane/src"
+if [ "${NIBBLE_CADO_OUTER:-0}" != 1 ]; then
+  exec "$NIBBLE_PYTHON" -m nibble.audit "$NIBBLE_PROJECT_ROOT/state/allocation-$SLURM_JOB_ID/audit" -- bash "$NIBBLE_CODE_ROOT/jobs/score-centering.sbatch"
+fi
 OUT="$NIBBLE_PROJECT_ROOT/state/score-centering-$SLURM_JOB_ID.json"
 MODEL="$NIBBLE_PROJECT_ROOT/../hf_cache/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots/989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
 "$NIBBLE_PYTHON" -m nibble.score_centering_benchmark "$MODEL" "$OUT" --prefixes "$NIBBLE_PROJECT_ROOT/../areal-kv/results/calibration-v0.jsonl"

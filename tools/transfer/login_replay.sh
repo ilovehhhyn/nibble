@@ -3,14 +3,14 @@
 # Usage: login_replay.sh <checkpoint default dir> <base model dir> <number of updates> <calibration prefixes> <out dir>
 set -euo pipefail
 source "$NIBBLE_PROJECT_ROOT/work/env.sh"
-export PYTHONPATH="$NIBBLE_CODE_ROOT/src:$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v5:$NIBBLE_PROJECT_ROOT/../cado/tplane/src"
+export PYTHONPATH="$NIBBLE_CODE_ROOT/src:$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v6:$NIBBLE_PROJECT_ROOT/../cado/tplane/src"
 export HF_DATASETS_CACHE="$NIBBLE_PROJECT_ROOT/../hf_cache/datasets"
 export PROJECT_ROOT="$NIBBLE_PROJECT_ROOT"
 export OMP_NUM_THREADS=4 HF_DATASETS_OFFLINE=1 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:?}"
 CKPT=$1; BASE=$2; UPDATES=$3; CAL=$4; OUT=$5
 COUNT=${COUNT:-64}; ABORT_AFTER=${ABORT_AFTER:-0.5}; SERVER_MEM_FRACTION=${SERVER_MEM_FRACTION:-0.45}; PORT=30133
 T=$NIBBLE_CODE_ROOT/tools; R="$NIBBLE_PYTHON"
-cd "$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v5"
+cd "$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v6"
 mkdir -p $OUT; REG=$OUT/registry; mkdir -p $REG
 ckpt_of() { if [ "$1" = 0 ]; then echo $BASE; else ls -d $CKPT/epoch*globalstep$(($1-1)) | head -1; fi; }
 echo "replay start $(date -Is) updates $UPDATES"
@@ -42,7 +42,7 @@ fresh_server() { if [ -z "$SERVER" ] || [ $(( $(date +%s) - SERVER_STARTED )) -g
 trap stop_server EXIT
 replay() { # k, split, offset, send, outdir, [extra server_replay arguments]
   local k=$1 split=$2 offset=$3 send=$4 out=$5; shift 5
-  $R $T/transfer/server_replay.py --url http://127.0.0.1:$PORT --source $(ckpt_of $k) --target $(ckpt_of $((k+1))) --source-version $k --target-version $((k+1)) \
+  $R -m nibble.audit "$out/cado-process/audit" -- $R $T/transfer/server_replay.py --url http://127.0.0.1:$PORT --source $(ckpt_of $k) --target $(ckpt_of $((k+1))) --source-version $k --target-version $((k+1)) \
     --splits $PROJECT_ROOT/work/data/fork-splits.json --split $split --offset $offset --count ${REPLAY_COUNT:-$COUNT} --abort-after-s ${REPLAY_ABORT:-$ABORT_AFTER} --max-new-tokens ${REPLAY_MAX_NEW:-1024} --send $send --out-dir $out "$@" > $out.log 2>&1
 }
 for k in $(seq 0 $((UPDATES-1))); do

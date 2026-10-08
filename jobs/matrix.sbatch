@@ -14,6 +14,9 @@ set -euo pipefail
 source "$NIBBLE_PROJECT_ROOT/work/env.sh"
 export HF_DATASETS_CACHE="$NIBBLE_PROJECT_ROOT/../hf_cache/datasets"
 export PYTHONPATH="$NIBBLE_CODE_ROOT/src:$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v6:$NIBBLE_PROJECT_ROOT/../cado/tplane/src"
+if [ "${NIBBLE_CADO_OUTER:-0}" != 1 ]; then
+  exec "$NIBBLE_PYTHON" -m nibble.audit "$NIBBLE_PROJECT_ROOT/state/allocation-$SLURM_JOB_ID/audit" -- bash "$NIBBLE_CODE_ROOT/jobs/matrix.sbatch"
+fi
 "$NIBBLE_PYTHON" -m nibble.cuda_build "$NIBBLE_PROJECT_ROOT" "$NIBBLE_PROJECT_ROOT/work/cuda-build-$SLURM_JOB_ID.sh"
 source "$NIBBLE_PROJECT_ROOT/work/cuda-build-$SLURM_JOB_ID.sh"
 export NIBBLE_RUNNER_CONFIG="$NIBBLE_PROJECT_ROOT/work/runner-$SLURM_JOB_ID.json"

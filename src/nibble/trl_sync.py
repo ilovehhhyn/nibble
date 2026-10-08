@@ -79,7 +79,7 @@ def _audit_run(run_dir, enabled, runtime):
             gpus_held=len(reader.total_bytes),
             policy=tplane.Policy(
                 on_agent=tplane.Action.ABORT,
-                on_grader=tplane.Action.WARN,
+                on_grader=tplane.Action.ABORT,
                 on_infra=tplane.Action.ABORT,
                 on_timeout=tplane.Action.ABORT,
                 max_attempts=1,

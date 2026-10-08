@@ -1,0 +1,37 @@
+# Bounded training audit: direct AReaL PPO 15211873
+
+## Finding
+
+The job performed real PPO optimization for 15 updates. This is verified by 15 successful train-step audit records, 15 optimizer-success values and 15 finite nonzero actor gradient norms in the run report and AReaL worker log, plus actor and critic checkpoint pairs at global steps 0–14. Cado recorded 17,408 successful trajectories, two updates' worth beyond the 15×256×4 sampled-and-trained budget, consistent with asynchronous work or prefetch; these extra rollouts are not evidence of extra optimizer steps.
+
+A bounded CPU safetensors slice comparison of saved step 0 vs step 14 confirms parameter changes: actor embedding slice changed 570/1,024 values, actor layer-0 q-projection changed 2,160/4,096; critic embedding slice changed 532/1,024, critic layer-0 q-projection changed 2,033/4,096, and critic score head changed 898/1,536 weights plus its bias. Max sampled delta was 2.44e-4. Actor model.embed_tokens.weight and lm_head.weight sampled slices are exactly equal at steps 0 and 14 and change identically. The actor checkpoint has both keys; the HF config advertises tied embeddings, but additional bounded full-width rows 0, 1, 1000, 50000 and 151935 also match exactly in both checkpoints; each sampled row differs from the base embedding by step 14 (max delta 2.44e-4). This does not assert whole-matrix equality or a full-model reload result.
+
+## Configuration and source fidelity
+
+work/matrix-submission-15211873.json pins source ac904ef02191a0d5fbd404052c5678f4daeef16a; work/runner-15211873.json identifies the executed AReaL runtime at work/deps/areal-040cbfd5-nibble-v5 and the actual Python environment. state/comparison-15211873/areal/areal.yaml has 15 steps, 256 prompts/update, four completions, max-new-tokens 1024, LR 1.7e-5, original areal.workflow.openai.math_agent.MathAgent, actor.attn_impl=sdpa, and original PPO trainer. The original fork YAML and executed V5 YAML have the same SHA-256 (1617596374d4ca976528e55037fb3e040f83cf13f505e2b6a5e68ec4df5c5732). Original arm launcher requests GPUs 0–2 for AReaL and supplies the same config overrides/settings; the Nibble campaign launcher executes the frozen fork_arm.run adapter rather than invoking that file directly.
+
+The reward implementation is (reward_score + reward_bias) * reward_scaling; the configured -0.5 bias and 10.0 scale therefore yield (r-.5)*10. The one documented PPO deviation is critic.gradient_checkpointing=true for the established GPU-memory repair. It adds recomputation but preserves the clipped losses, microbatch budget, trainer and optimizer. V5's ppo/actor.py differs from original actor.py only by rolling optional sampler top-k fields with the next-token shift and zeroing their final column; score centering is disabled in this arm, so this change does not affect its PPO loss. The critic-loss path is original.
+
+## Correctness and quality signals
+
+Per-update AReaL logs show max proximal staleness reaching 2 by update 3 and staying there. Average absolute behavior/current logprob gap climbs from 0.0195 (update 1) to 0.2791 (update 15); tokens outside a 1.5 ratio rise from 0.43% to 9.67%, and outside ratio 10 from 0.032% to 2.76%. Token rejection above ratio 5 remains small (0.006% to 0.144%). Task reward falls from 0.670 to 0.443. Logged average sequence length rises from 338 to 1,052 tokens. Those trends, together with the recorded 2/100 external evaluation, repeated boxed intermediate answers and 99/100 generations reaching the 1,024-token limit, make this a genuine but low-quality/degrading training result rather than a healthy-quality success.
+
+No concrete packed-token actor-loss alignment error was visible in the direct PPO path: the original PPO code shifts the loss mask for next-token prediction; the Nibble delta only separately aligns sampler top-k fields for centering. The pinned packed-attention repair changes attention masking. Both changes are outside the original fork, but the observed direct-arm PPO values do not show a demonstrated loss-alignment failure. Bounded tensor checks are spot checks, not full-model verification.
+
+## Evidence limits and actionable concern
+
+report.json omits policy/critic loss, KL and logprob-gap arrays (policy_losses, critic_losses, train_sampler_logprob_gaps are empty); the per-update worker.log tables are the evidence for behavior gap and policy loss. No critic loss values are emitted in those tables, so critic numerical behavior is not independently audited here. The primary correctness/performance concern is bounded asynchronous training drift: staleness saturates at the allowed maximum while importance-ratio violations and behavior gap worsen sharply. The independent final evaluation confirms poor quality, but this audit alone cannot isolate whether the cause is async drift, PPO dynamics, answer-format/generation behavior, or a remaining implementation issue.
+
+Evidence paths: state/comparison-15211873/areal/native-result.json, state/comparison-15211873/areal/report.json, state/comparison-15211873/areal/worker.log, state/comparison-15211873/areal/audit/, state/comparison-15211873/areal/areal/checkpoints/hh9077/nibble/areal/{default,critic}/, and work/releases/ac904ef02191a0d5fbd404052c5678f4daeef16a/src/nibble/fork_arm.py.
+
+## Independent evaluation regrade and future Cado coverage
+
+A CPU-only regrade of every saved completion with the unpatched original MathAgent reward and official cached test answers agrees with all 100 stored scores in each arm: direct 2/100 and map 34/100. No new generation or GPU diagnostic run was submitted. Evidence: work/evaluation-regrade-15211873-15211874.json.
+
+Training is verified, but healthy quality is not: severe repetition and 99 truncated evaluation answers warrant treating the direct arm as a degraded result. The cause is unresolved; this does not establish that async PPO itself reduces accuracy, nor that cache mapping caused the other arm's improvement.
+
+Future batch templates now enclose their actual child process in the user's Cado tplane Run, sampling all allocated GPUs with NVML and the Slurm cgroup. These process records carry optimizer_step=false and granularity=process: they must not be counted as optimizer updates or added to overlapping inner resource costs. Original stdout/stderr are inherited without truncation. Nonzero child exit persists a typed failure and aborts without retry. An open marker survives a hard kill; absence of a completed record is not success.
+
+The common evaluator records each real generation-and-grading batch of four as a Cado EVAL unit, preserving the exact questions, generation arguments and reward function. Each replay subprocess is separately wrapped and all 15 requested transition artifacts are validated after replay; JSON and cache-event evidence remain authoritative for actual cache use. Existing training trajectory watchers remain in place. These additions do not repair the policy degradation or establish GPU execution success. Existing completed arms are preserved and their evaluation Cado gap is disclosed, not retroactively filled with fabricated telemetry.
+
+One queued TRL startup defect was found and repaired before execution: tplane.Action.WARN does not exist in the user's library. The grader failure policy now uses supported Action.ABORT, preventing grader errors from becoming zero reward. Original successful grading/training behavior is unchanged.
