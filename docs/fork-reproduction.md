@@ -119,3 +119,17 @@ Use the engine's existing `critic.gradient_checkpointing=true` setting for all t
 A focused CPU regression compares the actual Qwen2 token-classification critic class with checkpointing off/on: packed sequence values, original clipped critic loss, every parameter gradient, finite/nonzero gradients, and reduced saved-tensor bytes. This does not establish that the full GPU run fits. The replacement first PPO allocation must validate that assumption. No additional GPU resources or shortened workloads are used.
 
 The failed allocation consumed 664 seconds on three GPUs (1,992 reserved GPU-seconds, 0.5533 GPU-hours); report separately from successful comparison costs. Logs, report, checkpoints and audit records remain under `state/comparison-15210962`; source archive 90a4e53c6a96d7774a059dc6c61985676b7535ac remains immutable. The campaign marker still says running after the exception, while Slurm and the actual arm report identify failure; a marker alone is not success evidence. Pending dependent requests have never run and will be replaced with a corrected immutable source.
+
+
+### Critic-memory-corrected requests
+
+Frozen source: `ac904ef02191a0d5fbd404052c5678f4daeef16a`. Failed direct PPO is retried from the same seed/base model; no completed 15-update arm is repeated. Unstarted 15210963–15210970 were cancelled and replaced under the same serial resource budgets.
+
+| Arm | PPO job | GRPO job | GPUs |
+|---|---:|---:|---:|
+| sync | 15211876 | 15211880 | 3 |
+| areal | 15211873 | 15211877 | 3 |
+| api-map | 15211874 | 15211878 | 4 |
+| api-map-sc | 15211875 | 15211879 | 4 |
+
+Transfer-only replay `15211881` reuses direct PPO `15211873`. Three focused CPU checks and independent review passed; full GPU memory fit and final accuracy/latency remain unverified until these allocations execute. Failure/frozen manifest history is retained in `work/failure-15210962.json` and `work/matrix-submission-before-critic-memory-15210962.json`.
