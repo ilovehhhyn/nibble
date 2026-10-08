@@ -108,3 +108,44 @@ def test_final_evaluation_selects_actor_not_critic(tmp_path, monkeypatch):
         (path / "config.json").write_text("{}")
     selected = actor_checkpoint(run)
     assert selected.parent.name == "default"
+
+
+def test_membership_validation_preserves_unconnected_remote_proxy(
+    tmp_path, monkeypatch
+):
+    """The real fork proxy cannot be iterated until PPOTrainer connects it."""
+    pytest.importorskip("areal.api.cli_args")
+    from areal.dataset import get_custom_dataset
+    from areal.infra.data_service.rdataset import RDataset
+    from transformers import AutoTokenizer
+    from nibble.comparison_data import validate_fork_training
+    from nibble.fork_arm import render_config
+
+    root = Path("/scratch/gpfs/ARORA/hh9077")
+    model = (
+        root
+        / "hf_cache/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots/989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
+    )
+    fork = root / "nibble/work/deps/areal-040cbfd5-nibble-v5"
+    if not model.is_dir() or not fork.is_dir():
+        pytest.skip("cached Della comparison assets are not mounted")
+    monkeypatch.setenv("HF_DATASETS_OFFLINE", "1")
+    monkeypatch.setenv("HF_DATASETS_CACHE", str(root / "hf_cache/datasets"))
+    monkeypatch.setattr("areal.utils.environ.is_single_controller", lambda: True)
+    tokenizer = AutoTokenizer.from_pretrained(model, local_files_only=True)
+    spec = SimpleNamespace(model="qwen", algorithm="ppo", cache_mode="recompute")
+    runtime = SimpleNamespace(models={"qwen": str(model)}, areal_root=fork)
+    config = render_config(spec, runtime, tmp_path / "remote-proxy")
+    proxy = get_custom_dataset(
+        split="train", dataset_config=config.train_dataset, tokenizer=tokenizer
+    )
+    assert isinstance(proxy, RDataset)
+    with pytest.raises(RuntimeError, match="not connected"):
+        list(proxy)
+    metadata = validate_fork_training(config.train_dataset, tokenizer)
+    assert metadata["filtered_count"] == 7473
+    assert len(metadata["requested_prompt_order"]) == 3840
+    assert metadata["membership_sha256"]
+    # Validation never connects, substitutes or consumes the trainer proxy.
+    with pytest.raises(RuntimeError, match="not connected"):
+        len(proxy)

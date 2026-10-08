@@ -149,7 +149,7 @@ def run(spec, runtime, run_dir):
     from areal.dataset import get_custom_dataset
     from areal.utils.hf_utils import load_hf_tokenizer
     from .mapper import fitter_service
-    from .comparison_data import prepare_training
+    from .comparison_data import validate_fork_training
 
     run_dir = Path(run_dir)
     wall_started = time.perf_counter()
@@ -158,11 +158,7 @@ def run(spec, runtime, run_dir):
     train_dataset = get_custom_dataset(
         split="train", dataset_config=config.train_dataset, tokenizer=tokenizer
     )
-    shared_dataset, _, data_metadata = prepare_training(tokenizer)
-    if list(shared_dataset) != list(train_dataset):
-        raise ValueError(
-            "shared comparison training set differs from the original fork"
-        )
+    data_metadata = validate_fork_training(config.train_dataset, tokenizer)
     atomic_json(run_dir / "data-manifest.json", data_metadata)
     valid_dataset = get_custom_dataset(
         split="test", dataset_config=config.valid_dataset, tokenizer=tokenizer

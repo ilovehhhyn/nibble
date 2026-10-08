@@ -68,3 +68,9 @@ Transfer-only replay job `15207812` follows all eight training jobs and reuses c
 Superseded pending jobs 15205429–15205433 were cancelled with elapsed 00:00:00. No comparison GPUs were consumed before submission. The first new job has no scheduler start estimate yet; queue status is not a training result.
 
 Validation: 45 CPU tests passed against the actual pinned V5 adapter; lint, eight source hashes, copied fitter equality and shell syntax passed. GPU accuracy and speed are pending execution.
+
+## Startup repair — October 8, 2026
+
+The first direct PPO attempt, 15207804, failed after 37 allocation seconds before any optimizer update, checkpoint or Cado trajectory. Its source attempted to iterate the original unconnected RDataset proxy while checking training membership. PPOTrainer normally connects that proxy to its DataController during initialization.
+
+The repair compares shared rows with the original concrete data-worker loader before startup, leaving the original remote proxy, trainer and scheduler unchanged. A CPU regression uses the real cached full dataset and verifies that validation neither connects nor consumes the proxy. The failed logs/reports are preserved. Remaining jobs had not started; their requests will be replaced with the corrected immutable source. This is one failed startup retry, not a repeat of completed training.

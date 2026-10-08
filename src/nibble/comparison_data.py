@@ -60,3 +60,28 @@ def prepare_training(tokenizer):
         "test_indices": list(range(100)),
     }
     return dataset, selected, metadata
+
+
+def validate_fork_training(dataset_config, tokenizer):
+    """Compare concrete worker-loaded rows without touching a remote proxy.
+
+    AReaL connects RDataset only inside PPOTrainer initialization. Use the
+    same local loader that its data workers invoke for this membership check;
+    leave the trainer's original proxy and scheduling lifecycle untouched.
+    """
+    from areal.dataset import _get_custom_dataset
+
+    original = _get_custom_dataset(
+        path=dataset_config.path,
+        type=dataset_config.type,
+        split="train",
+        max_length=dataset_config.max_length,
+        tokenizer=tokenizer,
+        **dict(getattr(dataset_config, "dataset_kwargs", None) or {}),
+    )
+    shared, _, metadata = prepare_training(tokenizer)
+    if list(shared) != list(original):
+        raise ValueError(
+            "shared comparison training set differs from the original fork"
+        )
+    return metadata
