@@ -14,7 +14,7 @@ COMPLETIONS_PER_PROMPT = 4
 
 
 def arm_overrides(spec, runtime, run_dir):
-    """Exact AReaL CLI overrides for the selected 15-step mapper arm."""
+    """Original arm overrides plus the documented PPO critic memory repair."""
     run_dir = Path(run_dir)
     fileroot = run_dir / "areal"
     values = {
@@ -42,6 +42,9 @@ def arm_overrides(spec, runtime, run_dir):
     }
     if spec.algorithm == "ppo":
         values["critic.attn_impl"] = "sdpa"
+        # Actor and critic share GPU2. The original critic default exhausts
+        # 80GB after the actor update; use its supported activation recompute.
+        values["critic.gradient_checkpointing"] = True
     if spec.cache_mode == "map":
         values.update(
             {
@@ -219,5 +222,12 @@ def run(spec, runtime, run_dir):
                 else "disabled"
             ),
             "checkpoints_retained": True,
+            "critic_gradient_checkpointing": spec.algorithm == "ppo",
+            "memory_repair": (
+                "critic non-reentrant activation checkpointing; extra recompute "
+                "versus original fork default, unchanged loss and microbatches"
+                if spec.algorithm == "ppo"
+                else "none (GRPO has no critic)"
+            ),
         },
     )

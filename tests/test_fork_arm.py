@@ -70,6 +70,9 @@ def test_rendered_config_preserves_original_ppo_defaults(arm_context, tmp_path):
     assert rendered.actor.adv_norm.mean_level == original.actor.adv_norm.mean_level
     assert rendered.actor.adv_norm.std_level == original.actor.adv_norm.std_level
     assert rendered.actor.use_decoupled_loss == original.actor.use_decoupled_loss
+    assert rendered.critic.gradient_checkpointing is True
+    assert rendered.actor.gradient_checkpointing is True
+    assert rendered.critic.mb_spec.max_tokens_per_mb == 10240
     assert rendered.critic.is_critic == original.critic.is_critic
     assert rendered.critic.optimizer.lr == rendered.actor.optimizer.lr
 

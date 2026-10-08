@@ -108,3 +108,14 @@ Frozen source: `90a4e53c6a96d7774a059dc6c61985676b7535ac`. All replacement reque
 | api-map-sc | 15210964 | 15210968 | 4 |
 
 Transfer-only replay `15210970` follows the eight runs and uses `15210962` checkpoints. Compiler and log-monitor fixes passed focused CPU tests and independent review; actual corrected GPU training remains pending. Durable history: `work/matrix-submission-before-curand-15210056.json`, `work/failure-15210056.json`.
+
+
+## PPO critic memory repair — October 8, 2026
+
+Job 15210962 passed the previous dataset and sampling compiler repairs and generated real rollouts. Its second critic update failed in Qwen2MLP.up_proj: a 176 MiB CUDA allocation had only 173 MiB free on the 79.27 GiB trainer GPU. Actor and critic share that GPU; the actor process retained 40.73 GiB while the critic used 37.88 GiB. The original YAML enables actor activation checkpointing but leaves critic checkpointing disabled. This is the original fork setting, not a configuration-copy mismatch. One complete step-0 actor/critic checkpoint and 4,096 successful Cado trajectories survive. The second actor update occurred before the critic exception, so completed-step count is not a count of all actor optimizer executions. No final held-out evaluation exists.
+
+Use the engine's existing `critic.gradient_checkpointing=true` setting for all three PPO fork arms. It enables non-reentrant activation recomputation and retains the original clipped critic loss, actor loss, optimizer, reward, packed attention, 10,240-token microbatch budget, training membership/order and three-GPU training geometry. GRPO has no critic and is unchanged. This is an explicit memory-related deviation from the original fork default: it adds backward recomputation, so resulting PPO timing includes that cost and cannot be presented as unmodified original-default timing. Background fitter lifecycle remains unchanged.
+
+A focused CPU regression compares the actual Qwen2 token-classification critic class with checkpointing off/on: packed sequence values, original clipped critic loss, every parameter gradient, finite/nonzero gradients, and reduced saved-tensor bytes. This does not establish that the full GPU run fits. The replacement first PPO allocation must validate that assumption. No additional GPU resources or shortened workloads are used.
+
+The failed allocation consumed 664 seconds on three GPUs (1,992 reserved GPU-seconds, 0.5533 GPU-hours); report separately from successful comparison costs. Logs, report, checkpoints and audit records remain under `state/comparison-15210962`; source archive 90a4e53c6a96d7774a059dc6c61985676b7535ac remains immutable. The campaign marker still says running after the exception, while Slurm and the actual arm report identify failure; a marker alone is not success evidence. Pending dependent requests have never run and will be replaced with a corrected immutable source.
