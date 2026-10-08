@@ -87,3 +87,11 @@ Corrected frozen source: `a5c652dc8d13d08f9fdff863b10ffc04da52dd8c`. Only 152078
 | api-map-sc | 15210058 | 15210062 | 4 |
 
 Transfer-only replay `15210064` reuses direct PPO `15210056`. Six focused CPU tests passed, including real full-data membership and unconnected-proxy regression; the fix is independently reviewed. Replacement GPU execution/results are pending. Failure evidence is in `work/failure-15207804.json`; the original submission remains in `work/matrix-submission-before-rdataset-15207804.json`.
+
+## Sampling compiler repair — October 8, 2026
+
+Replacement 15210056 passed the dataset preflight and initialized training workers, but the first FlashInfer sampling compile failed because Della's CUDA12.9 compiler include path omitted cuRAND headers. Both SGLang schedulers exited; the original controller continued retrying dead workers with zero accepted trajectories. The nonproductive allocation was stopped at1,687seconds (5,061 reserved GPU-seconds). No optimizer update/checkpoint was completed. Logs remain under state/comparison-15210056.
+
+The existing PyTorch NVIDIA wheel already contains the required headers. The repair exposes that exact directory through FlashInfer's supported extra compiler flags, preserving its sampling backend and all training settings. FlashInfer/Triton/Torch/driver caches now stay under Nibble work/cache. The actual sampling header's full dependency chain passed nvcc preprocessing on CPU, without GPU execution. The API runner also stops immediately when a fatal SGLang scheduler exception and child SIGQUIT appear, including across log read boundaries; ordinary rollout rejection does not trigger it.
+
+Compiler initialization/caching costs remain distinct from steady-state trainer latency. Failed allocations are reported separately rather than hidden from total experiment costs. All remaining requests had never started and will use the corrected archive under the same resource limits.

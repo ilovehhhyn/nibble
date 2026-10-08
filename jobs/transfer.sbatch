@@ -12,6 +12,9 @@
 #SBATCH --output=/scratch/gpfs/ARORA/hh9077/nibble/work/slurm-%j.out
 set -euo pipefail
 source "$NIBBLE_PROJECT_ROOT/work/env.sh"
+export PYTHONPATH="$NIBBLE_CODE_ROOT/src:$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v5:$NIBBLE_PROJECT_ROOT/../cado/tplane/src"
+"$NIBBLE_PYTHON" -m nibble.cuda_build "$NIBBLE_PROJECT_ROOT" "$NIBBLE_PROJECT_ROOT/work/cuda-build-$SLURM_JOB_ID.sh"
+source "$NIBBLE_PROJECT_ROOT/work/cuda-build-$SLURM_JOB_ID.sh"
 MODEL="$NIBBLE_PROJECT_ROOT/../hf_cache/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots/989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
 CKPT=$($NIBBLE_PYTHON - "$NIBBLE_PROJECT_ROOT/state/comparison-$NIBBLE_REFERENCE_JOB/campaign.json" <<'CONFIG'
 import json,sys

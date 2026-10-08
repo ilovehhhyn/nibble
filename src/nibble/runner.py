@@ -13,6 +13,30 @@ from .runtime import check_idle
 from .spec import TrainSpec
 
 
+class WorkerFailureMonitor:
+    """Detect an unrecoverable SGLang child exit without changing rollout policy."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.offset = 0
+        self.scheduler_failed = False
+        self.child_quit = False
+        self.tail = ""
+
+    def poll(self):
+        with self.path.open() as stream:
+            stream.seek(self.offset)
+            chunk = stream.read(65536)
+            self.offset = stream.tell()
+        observed = self.tail + chunk
+        self.tail = observed[-256:]
+        if "Scheduler hit an exception:" in observed:
+            self.scheduler_failed = True
+        if "SIGQUIT received." in observed:
+            self.child_quit = True
+        return self.scheduler_failed and self.child_quit
+
+
 def terminate_group(proc, descendants):
     # Track descendants even when AReaL gives them separate sessions.
     alive = []
@@ -78,7 +102,14 @@ def execute(runtime, run_dir, spec, cancelled=lambda: False, check_gpu=True):
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+            failure_monitor = WorkerFailureMonitor(run_dir / "worker.log")
             while proc.poll() is None:
+                if failure_monitor.poll():
+                    status, error = (
+                        "failed",
+                        "SGLang scheduler exited after a fatal exception; see worker.log",
+                    )
+                    break
                 try:
                     for child in psutil.Process(proc.pid).children(recursive=True):
                         descendants[(child.pid, child.create_time())] = child

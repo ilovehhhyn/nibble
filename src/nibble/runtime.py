@@ -109,6 +109,10 @@ class Runtime:
         env["PYTHONPATH"] = os.pathsep.join(
             [repo_src, str(self.areal_root), str(self.cado_src)]
         )
+        if os.environ.get("SLURM_JOB_ID"):
+            from .cuda_build import build_environment
+
+            env.update(build_environment(self.root))
         env["AREAL_FORCE_HOST_IP"] = "127.0.0.1"
         env["WANDB_MODE"] = "disabled"
         env["OMP_NUM_THREADS"] = "2"

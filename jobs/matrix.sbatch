@@ -14,6 +14,8 @@ set -euo pipefail
 source "$NIBBLE_PROJECT_ROOT/work/env.sh"
 export HF_DATASETS_CACHE="$NIBBLE_PROJECT_ROOT/../hf_cache/datasets"
 export PYTHONPATH="$NIBBLE_CODE_ROOT/src:$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v5:$NIBBLE_PROJECT_ROOT/../cado/tplane/src"
+"$NIBBLE_PYTHON" -m nibble.cuda_build "$NIBBLE_PROJECT_ROOT" "$NIBBLE_PROJECT_ROOT/work/cuda-build-$SLURM_JOB_ID.sh"
+source "$NIBBLE_PROJECT_ROOT/work/cuda-build-$SLURM_JOB_ID.sh"
 export NIBBLE_RUNNER_CONFIG="$NIBBLE_PROJECT_ROOT/work/runner-$SLURM_JOB_ID.json"
 export PATH="$(dirname "$NIBBLE_PYTHON"):$PATH"
 export OMP_NUM_THREADS=8 MKL_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8
