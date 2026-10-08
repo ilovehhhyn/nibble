@@ -17,6 +17,13 @@ def main():
 
     os.environ["NIBBLE_OBJECTIVE"] = spec.objective
     os.environ["NIBBLE_SCORE_CENTERING"] = "1" if spec.score_centering else "0"
+    if spec.score_centering:
+        from transformers import AutoConfig
+
+        model_config = AutoConfig.from_pretrained(
+            runtime.models[spec.model], local_files_only=True
+        )
+        os.environ["NIBBLE_MODEL_VOCAB_SIZE"] = str(model_config.vocab_size)
     os.environ["NIBBLE_MAPPER_GPU"] = (
         runtime.gpu_ids[3]
         if spec.target == "slurm" and len(runtime.gpu_ids) == 4

@@ -73,7 +73,16 @@ def main():
     lines = [
         "# Eight-arm Nibble feasibility comparison",
         "",
-        f"Frozen source: {manifest['source_revision']}.",
+        "Frozen sources (per-arm revisions are recorded in the submission manifest): "
+        + ", ".join(
+            sorted(
+                {
+                    job.get("source_revision", manifest["source_revision"])
+                    for job in manifest["training_jobs"]
+                }
+            )
+        )
+        + ".",
         "",
         "15 updates × 256 prompts × 4 completions; model seed 1; same 100 official GSM8K test questions. Accuracy is deterministic greedy completion correctness under the original MathAgent parser/verifier.",
         "",

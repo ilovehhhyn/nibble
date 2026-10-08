@@ -162,3 +162,91 @@ def test_interaction_exports_sampler_heads_and_zero_prompt_rows():
         data["sampler_topk_logprobs"],
         torch.tensor([[[0.0, 0.0], [0.0, 0.0], [-0.2, -1.6], [-0.5, -1.1]]]),
     )
+
+
+@pytest.mark.parametrize("top_k", [128, 100000000])
+def test_score_centering_accepts_only_verified_full_vocabulary_top_k(
+    monkeypatch, top_k
+):
+    monkeypatch.setenv("NIBBLE_SCORE_CENTERING", "1")
+    monkeypatch.setenv("NIBBLE_MODEL_VOCAB_SIZE", "128")
+    backend = SGLangBackend()
+    request = ModelRequest(
+        input_ids=[1, 2], gconfig=GenerationHyperparameters(top_k=top_k)
+    )
+    centered = backend.build_generation_request(request, with_lora=False, version=0)
+    monkeypatch.setenv("NIBBLE_SCORE_CENTERING", "0")
+    original = backend.build_generation_request(request, with_lora=False, version=0)
+    assert centered.payload["sampling_params"] == original.payload["sampling_params"]
+    assert centered.payload["sampling_params"]["top_k"] == top_k
+    assert centered.payload["top_logprobs_num"] == 128
+    request.gconfig.top_k = 127
+    monkeypatch.setenv("NIBBLE_SCORE_CENTERING", "1")
+    with pytest.raises(ValueError, match="model_vocab_size=128"):
+        backend.build_generation_request(request, with_lora=False, version=0)
+    monkeypatch.delenv("NIBBLE_MODEL_VOCAB_SIZE")
+    request.gconfig.top_k = 100000000
+    with pytest.raises(ValueError, match="model_vocab_size=0"):
+        backend.build_generation_request(request, with_lora=False, version=0)
+
+
+def test_original_math_agent_openai_default_reaches_score_centering_backend(
+    monkeypatch,
+):
+    """Exercise the real omitted-top-k conversion which the GPU run rejected."""
+    import asyncio
+    from pathlib import Path
+    from transformers import AutoConfig, AutoTokenizer
+    from areal.experimental.openai.client import ArealOpenAI
+    from areal.workflow.openai.math_agent import MathAgent
+
+    model = Path(
+        "/scratch/gpfs/ARORA/hh9077/hf_cache/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots/989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
+    )
+    if not model.is_dir():
+        pytest.skip("cached Della model metadata is not mounted")
+    config = AutoConfig.from_pretrained(model, local_files_only=True)
+    assert config.vocab_size == 151936
+    monkeypatch.setenv("NIBBLE_SCORE_CENTERING", "1")
+    monkeypatch.setenv("NIBBLE_MODEL_VOCAB_SIZE", str(config.vocab_size))
+    tokenizer = AutoTokenizer.from_pretrained(model, local_files_only=True)
+    captured = []
+
+    class RequestCaptured(Exception):
+        pass
+
+    class CaptureEngine:
+        async def agenerate(self, request):
+            payload = (
+                SGLangBackend()
+                .build_generation_request(request, with_lora=False, version=0)
+                .payload
+            )
+            assert request.gconfig.top_k == 100000000
+            assert request.gconfig.max_new_tokens == 1024
+            assert payload["sampling_params"]["top_k"] == 100000000
+            assert payload["top_logprobs_num"] == 128
+            captured.append(payload)
+            raise RequestCaptured  # Stop before sampling; no network/model/GPU.
+
+    async def exercise():
+        client = ArealOpenAI(
+            engine=CaptureEngine(),
+            tokenizer=tokenizer,
+            api_key="cpu-test",
+            engine_max_tokens=32768,
+        )
+        monkeypatch.setattr(
+            "areal.workflow.openai.math_agent.AsyncOpenAI", lambda **kwargs: client
+        )
+        agent = MathAgent(
+            temperature=1.0, top_p=1.0, max_tokens=32768, max_completion_tokens=1024
+        )
+        try:
+            with pytest.raises(RequestCaptured):
+                await agent.run({"messages": "What is 1+1?", "answer": "2"})
+        finally:
+            await client.close()
+
+    asyncio.run(exercise())
+    assert len(captured) == 1

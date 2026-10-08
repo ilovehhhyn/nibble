@@ -127,7 +127,7 @@
              if ctx.pad_length > 0:
 --- a/areal/engine/sglang_remote.py
 +++ b/areal/engine/sglang_remote.py
-@@ -42,6 +42,31 @@
+@@ -42,6 +42,40 @@
  logger = getLogger("SGLangRemote")
  
  
@@ -142,24 +142,33 @@
 +def _validate_score_centering_sampling(gconfig) -> None:
 +    if not _score_centering_enabled():
 +        return
++    # The original OpenAI client represents unlimited top-k as 1e8.
++    # Accept it only when it covers the actual registered model vocabulary.
++    raw_vocab = os.environ.get("NIBBLE_MODEL_VOCAB_SIZE", "")
++    vocab_size = int(raw_vocab) if raw_vocab.isdigit() else 0
++    unfiltered_top_k = gconfig.top_k == -1 or (
++        vocab_size > 0 and gconfig.top_k >= vocab_size
++    )
 +    if (
 +        gconfig.greedy
 +        or gconfig.temperature != 1.0
 +        or gconfig.top_p != 1.0
-+        or gconfig.top_k != -1
++        or not unfiltered_top_k
 +        or gconfig.frequency_penalty != 0.0
 +        or gconfig.min_new_tokens != 0
 +    ):
 +        raise ValueError(
 +            "NIBBLE_SCORE_CENTERING=1 requires sampling with greedy=False, "
-+            "temperature=1, top_p=1, top_k=-1, frequency_penalty=0, and "
-+            "min_new_tokens=0 so the saved head represents the sampler distribution."
++            "temperature=1, top_p=1, top_k=-1 or >= verified model vocab_size, "
++            "frequency_penalty=0, and "
++            "min_new_tokens=0 so the saved head represents the sampler distribution. "
++            f"Observed top_k={gconfig.top_k}, model_vocab_size={vocab_size}."
 +        )
 +
  
  def _weight_version_field(meta: WeightUpdateMeta) -> dict[str, str]:
      """SGLang records the policy version with the weights so KV retention can pair source and target versions."""
-@@ -68,6 +93,7 @@
+@@ -68,6 +102,7 @@
      ) -> HttpRequest:
          """Build SGLang generation request."""
          gconfig = req.gconfig
@@ -167,7 +176,7 @@
          stop_token_ids = gconfig.stop_token_ids
          stop = gconfig.stop
  
-@@ -86,6 +112,9 @@
+@@ -86,6 +121,9 @@
              "skip_special_tokens": gconfig.skip_special_tokens,
              "frequency_penalty": gconfig.frequency_penalty,
          }
@@ -177,7 +186,7 @@
          if stop:
              sample_params["stop"] = stop
          if gconfig.seed is not None:
-@@ -98,6 +127,9 @@
+@@ -98,6 +136,9 @@
              "return_logprob": True,
              "stream": False,
          }
@@ -187,7 +196,7 @@
  
          # Add return_routed_experts to payload if set
          if req.metadata.get("return_routed_experts", False):
-@@ -146,10 +178,36 @@
+@@ -146,10 +187,36 @@
                  routed_experts=routed_experts,
                  spec_accept_rate=spec_accept_rate,
                  spec_accept_length=spec_accept_length,
@@ -228,7 +237,7 @@
  
          return HttpGenerationResult(
              output_tokens=output_tokens,
-@@ -158,6 +216,8 @@
+@@ -158,6 +225,8 @@
              routed_experts=routed_experts,
              spec_accept_rate=spec_accept_rate,
              spec_accept_length=spec_accept_length,

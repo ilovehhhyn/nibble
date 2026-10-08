@@ -22,6 +22,7 @@ class WorkerFailureMonitor:
         self.scheduler_failed = False
         self.child_quit = False
         self.tail = ""
+        self.error = None
 
     def poll(self):
         with self.path.open() as stream:
@@ -34,7 +35,13 @@ class WorkerFailureMonitor:
             self.scheduler_failed = True
         if "SIGQUIT received." in observed:
             self.child_quit = True
-        return self.scheduler_failed and self.child_quit
+        if "NIBBLE_SCORE_CENTERING=1 requires sampling" in observed:
+            self.error = "Unsupported score-centering sampling contract; see worker.log"
+        elif self.scheduler_failed and self.child_quit:
+            self.error = (
+                "SGLang scheduler exited after a fatal exception; see worker.log"
+            )
+        return self.error is not None
 
 
 def terminate_group(proc, descendants):
@@ -107,7 +114,7 @@ def execute(runtime, run_dir, spec, cancelled=lambda: False, check_gpu=True):
                 if failure_monitor.poll():
                     status, error = (
                         "failed",
-                        "SGLang scheduler exited after a fatal exception; see worker.log",
+                        failure_monitor.error,
                     )
                     break
                 try:

@@ -63,7 +63,25 @@ def test_transient_rollout_rejections_do_not_terminate_training(tmp_path):
 
 def test_fatal_markers_survive_chunk_boundary_and_output_order(tmp_path):
     path = tmp_path / "worker.log"
-    path.write_text("x" * (65536 - 12) + "SIGQUIT received.\nScheduler hit an exception: Traceback\n")
+    path.write_text(
+        "x" * (65536 - 12)
+        + "SIGQUIT received.\nScheduler hit an exception: Traceback\n"
+    )
     monitor = WorkerFailureMonitor(path)
     assert not monitor.poll()
     assert monitor.poll()
+
+
+def test_score_centering_contract_failure_stops_without_child_crash(tmp_path):
+    path = tmp_path / "worker.log"
+    path.write_text(
+        "x" * (65536 - 22) + "NIBBLE_SCORE_CENTERING=1 requires sampling "
+        "with full-vocabulary top-k; this trajectory will be rejected.\n"
+    )
+    monitor = WorkerFailureMonitor(path)
+    assert not monitor.poll()
+    assert monitor.poll()
+    assert (
+        monitor.error == "Unsupported score-centering sampling contract; see worker.log"
+    )
+    assert not monitor.child_quit
