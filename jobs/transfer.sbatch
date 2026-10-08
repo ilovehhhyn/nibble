@@ -13,7 +13,7 @@
 set -euo pipefail
 source "$NIBBLE_PROJECT_ROOT/work/env.sh"
 MODEL="$NIBBLE_PROJECT_ROOT/../hf_cache/hub/models--Qwen--Qwen2.5-1.5B-Instruct/snapshots/989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
-CKPT=$($NIBBLE_PYTHON - "$NIBBLE_PROJECT_ROOT/state/fork-$NIBBLE_REFERENCE_JOB/campaign.json" <<'CONFIG'
+CKPT=$($NIBBLE_PYTHON - "$NIBBLE_PROJECT_ROOT/state/comparison-$NIBBLE_REFERENCE_JOB/campaign.json" <<'CONFIG'
 import json,sys
 from pathlib import Path
 c=json.loads(Path(sys.argv[1]).read_text())

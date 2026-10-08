@@ -84,48 +84,70 @@ class TrainSpec:
             )
         if self.cache_mode == "recompute" and self.mapper_registry is not None:
             raise ValueError("mapper_registry only applies to map mode")
-        if self.objective not in ("legacy_grpo", "group_pg_tis", "fork_ppo"):
-            raise ValueError("objective must be legacy_grpo, group_pg_tis or fork_ppo")
-        if self.execution not in ("areal", "standalone_sync", "fork_arm"):
+        if self.objective not in (
+            "legacy_grpo",
+            "group_pg_tis",
+            "fork_ppo",
+            "fork_grpo",
+        ):
+            raise ValueError("unsupported training objective")
+        if self.execution not in ("areal", "standalone_sync", "fork_arm", "trl_sync"):
             raise ValueError("execution must be areal, standalone_sync or fork_arm")
-        if self.score_centering and self.objective != "group_pg_tis":
-            raise ValueError(
-                "score centering requires the paper group_pg_tis objective"
-            )
-        if (
-            self.target == "slurm"
-            and self.max_gpus != 4
-            and not (
-                self.execution == "fork_arm"
-                and self.max_gpus == 3
-                and self.cache_mode == "recompute"
-            )
+        if self.score_centering and self.objective not in (
+            "group_pg_tis",
+            "fork_ppo",
+            "fork_grpo",
         ):
-            raise ValueError("the Slurm comparison requires exactly four GPUs")
-        if self.execution == "fork_arm" and (
-            self.algorithm != "ppo"
-            or self.objective != "fork_ppo"
-            or self.target != "slurm"
-            or self.score_centering
+            raise ValueError("score centering requires a supported policy objective")
+        if self.target == "slurm":
+            required = 4 if self.cache_mode == "map" else 3
+            if self.execution in ("fork_arm", "trl_sync"):
+                if self.max_gpus != required:
+                    raise ValueError(f"this comparison profile needs {required} GPUs")
+            elif self.max_gpus != 4:
+                raise ValueError("the legacy Slurm comparison requires four GPUs")
+        if self.execution in ("fork_arm", "trl_sync"):
+            if (
+                self.dataset != "gsm8k"
+                or self.reward != "gsm8k"
+                or self.environment != "math"
+            ):
+                raise ValueError(
+                    "the fork comparison preset implements GSM8K with the original math reward"
+                )
+            expected = "fork_ppo" if self.algorithm == "ppo" else "fork_grpo"
+            expected_lr = 1.7e-5 if self.algorithm == "ppo" else 6e-6
+            if self.objective != expected or self.target != "slurm":
+                raise ValueError(
+                    "comparison execution requires its matching fork objective in Slurm"
+                )
+            if (
+                self.max_steps != 15
+                or self.prompts_per_step != 256
+                or self.rollouts_per_prompt != 4
+                or self.max_concurrent_rollouts != 256
+                or self.max_staleness != (0 if self.execution == "trl_sync" else 2)
+                or self.learning_rate != expected_lr
+                or self.max_new_tokens != 1024
+                or self.max_prompt_tokens != 1024
+                or self.seed != 1
+            ):
+                raise ValueError(
+                    "comparison preset is 15 updates, 256 prompts, four samples, original token caps and seed"
+                )
+        if self.execution == "trl_sync" and (
+            self.score_centering or self.cache_mode != "recompute" or self.fit_mappers
         ):
             raise ValueError(
-                "fork_arm uses the original PPO loss inside Slurm; score centering is measured separately"
+                "TRL baseline is synchronous, recompute, and score-centering off"
             )
-        if self.execution == "fork_arm" and (
-            self.max_steps != 15
-            or self.prompts_per_step != 256
-            or self.rollouts_per_prompt != 4
-            or self.max_concurrent_rollouts != 256
-            or self.max_staleness != 2
-            or self.learning_rate != 1.7e-5
+        if self.algorithm == "ppo" and self.execution not in ("fork_arm", "trl_sync"):
+            raise ValueError("ppo requires a comparison execution")
+        if self.objective in ("fork_ppo", "fork_grpo") and self.execution not in (
+            "fork_arm",
+            "trl_sync",
         ):
-            raise ValueError(
-                "fork_arm is the source-faithful 15-update, 256-prompt PPO experiment preset"
-            )
-        if self.algorithm == "ppo" and self.execution != "fork_arm":
-            raise ValueError("ppo requires fork_arm execution")
-        if self.objective == "fork_ppo" and self.execution != "fork_arm":
-            raise ValueError("fork_ppo requires fork_arm execution")
+            raise ValueError("fork objectives require their comparison execution")
         if self.fit_mappers and (
             self.target != "slurm" or self.cache_mode != "map" or self.mapper_registry
         ):

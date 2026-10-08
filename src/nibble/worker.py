@@ -25,6 +25,8 @@ def main():
     if spec.execution == "fork_arm":
         os.environ["NIBBLE_PACKED_SDPA"] = "1"
         from .fork_arm import run
+    elif spec.execution == "trl_sync":
+        from .trl_sync import run
     elif spec.execution == "standalone_sync":
         from .sync_baseline import run
     else:

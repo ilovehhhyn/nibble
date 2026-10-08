@@ -58,7 +58,8 @@ class Runtime:
             else (
                 (
                     3
-                    if spec.execution == "fork_arm" and spec.cache_mode == "recompute"
+                    if spec.execution in ("fork_arm", "trl_sync")
+                    and spec.cache_mode == "recompute"
                     else 4
                 )
                 if spec.target == "slurm"
@@ -67,10 +68,9 @@ class Runtime:
         )
         if spec.target == "slurm" and not os.environ.get("SLURM_JOB_ID"):
             raise ValueError("slurm jobs must run inside a scheduler allocation")
-        if (
-            spec.objective == "group_pg_tis"
-            and not (self.areal_root / "NIBBLE_PATCHED").is_file()
-        ):
+        if (spec.objective == "group_pg_tis" or spec.score_centering) and not (
+            self.areal_root / "NIBBLE_PATCHED"
+        ).is_file():
             raise ValueError(
                 "score centering requires the pinned, patched AReaL adapter"
             )

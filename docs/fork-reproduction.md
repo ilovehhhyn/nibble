@@ -1,43 +1,53 @@
-# Fork-faithful queued reproduction
+# Eight-arm source-faithful comparison
 
-User-selected protocol: areal-kv/jobs/arm.sbatch, 15 updates. Config is the fork's examples/math/gsm8k_ppo.yaml, byte-identical to the pinned dependency copy. Full official GSM8K train split, shuffled as in the fork, 256 prompts per update, four completions per prompt, max_new_tokens=1024. Original clipped PPO, critic, reward scaling/normalization, AdamW lr=1.7e-5, microbatch token cap=10240, NCCL weight publication, SGLang flashinfer/context_length=32768/memory fraction=.8/CUDA graphs defaults remain intact. It is not the previous group-relative REINFORCE/TIS pilot.
+This protocol replaces the unstarted five-job chain documented in [the archived plan](fork-reproduction-825fd016.md). Four PPO runs and four GRPO runs share the same model, filtered GSM8K training membership and epoch-zero prompt order, original mathematical verifier, 15 updates, 256 prompts/update, four completions/prompt, max completion1024 and total sequence cap2048. Model seed is1; the original DistributedSampler uses shuffle seed0.
 
-Three serial training arms: direct fork exact-cache (3 GPUs), authenticated HTTP/SDK fork exact-cache (3 GPUs), authenticated HTTP/SDK fork mapping (4 GPUs). Each runs 15 updates and receives a common deterministic HF native-cache evaluation on the first **100 official GSM8K test questions**. One initial checkpoint evaluation also uses 100 questions. Mapping uses the original background checkpoint-polling fitter on GPU 3, ten-second polling, mapper wait=0, migration depth=-1, original calibration-v0.jsonl, batch16/max_tokens2048/lambda.01/stride4/same_layer with no artificial limit. No initial v0-v1 mapper is fabricated. Missing/not-yet-ready artifacts use the fork's existing rebuild fallback. Fitter CPU/GPU work, readiness, overlap, shutdown tail and reserved resources are reported, never treated as zero cost.
+| Arm in each algorithm | Trainer | KV | Score centering | GPUs |
+|---|---|---|---|---:|
+| sync | official HF TRL0.28.0 | recompute | off | 3 |
+| areal | original AReaL PPOTrainer + original YAML | recompute | off | 3 |
+| api-map | same fork via HTTP/SDK | original background map | off | 4 |
+| api-map-sc | same fork via HTTP/SDK | original background map | on | 4 |
 
-The fitter_service.py and fit_mapper_hf.py tools are byte-identical copies of the original source. fork_arm.py calls original PPOTrainer directly with original get_custom_dataset and MathAgent; there is no trainer subclass or blocking fit override. This is an experiment preset: the API validates its actual fixed workload instead of accepting a smaller count and silently training 15 updates.
+The fork uses PPOTrainer for both YAMLs. PPO has a critic; GRPO has original group reward mean/std normalization and no critic. Actor optimizer, batch advantage normalization, clipping, pre-update logprob recomputation, token importance rejection and NCCL publication stay original. PPO LR is1.7e-5; GRPO LR is6e-6. All fork arms use unchanged MathAgent and math_verify.verify(parse(completion),parse(answer)). Reward transform is (reward-.5)*10, not 10*reward-.5.
 
-## Explicit differences from the original launcher
+## Background mapping fidelity
 
-- Proven packed-SDPA sequence isolation repair retained consistently in all fork arms for Transformers5.3. Original mask=None dictionaries allow cross-example attention; this numerical fix changes neither PPO nor scheduling.
-- Common external 100-question test replaces original internal evaluation. It measures answer correctness with the original math verifier; no cache mapping is used during evaluation.
-- All 15 checkpoints are retained because the subsequent transfer replay needs every transition. The original arm launcher periodically deleted all but three; deleting here would make the requested transfer workload impossible. Checkpoint write cadence is unchanged.
-- Cado observes the real Slurm cgroup and allocated physical GPU IDs. Reward and training logic are untouched. Audit reports separate trajectory records from train-step units.
-- Exact arms request only three GPUs rather than reserving an idle fourth. Map reserves four. Therefore GPU-second comparisons must charge actual allocation sizes; training latency is comparable hardware-role placement, not equal total reserved capacity.
+Copied fitter_service.py and fit_mapper_hf.py are byte-identical to original tools. GPU0/1 serve rollouts, GPU2 trains, GPU3 fits alongside training. Fitter polls adjacent saved checkpoints every10sec, using original calibration, max_tokens2048, batch16, ridge.01, stride4, same_layer. No artificial prefix limit or fabricated v0-to-v1 mapper. Mapper wait=0, retain-on-abort=true, mode=map, depth=-1 match arm.sbatch. Missing artifacts use the fork's rebuild fallback. No API fitting barrier.
 
-## Separate score-centering overhead
+Training time, full worker time, fitting work/readiness and shutdown tail are separate. The mapper allocation is charged; concurrent work is not added again to training time. Reports inspect real map/rebuild events and cannot infer cache benefit from fallback-only runs.
 
-A one-GPU 15-minute capped job measures existing modular group-relative REINFORCE/TIS score-centering off/on on the same four real calibration sequences and checkpoint. One warm-up per mode and three alternating paired forward/backward timings; sampler logsoftmax/top128 timing is separate. Artificial deterministic group advantages are explicitly disclosed. No optimizer updates or inference accuracy are claimed from this benchmark. It measures HF forward/loss/backward computation only, not SGLang top-k serialization/transport or whole RL training overhead. Score-centering is not inserted into original clipped PPO or DPO under an invented formula.
+## Score-centering contract
 
-## Subsequent transfer workload
+[Paper Appendix A.2–A.3](https://arxiv.org/html/2609.20807v1) defines weighted head/tail centering. Original rejection defaults to token action=mask, no lower ratio bound, upper5. Effective weight is f(r)=r*1[r<=5], not cap-two TIS or lower-half MIS.
 
-After all three fork arms and the score-centering cost job, one GPU replays all **15 policy transitions** using the direct fork's preserved checkpoints. Source tools/login/login_replay.sh and server_replay.py are copied; only paths, interpreter, dependency tree and Slurm-visible GPU selection are adapted. Original replay workload: 64 training-holdout prompts per transition, alternating concurrent/sequential sends, abort_after=.5s, max1024 tokens, transfer vs re-prefill plus repeated re-prefill noise floor; original warm-ups and synthetic long-prefix sweep at 2/5/10/17 seconds retained. Transfer-holdout accuracy is distinct from the common official-test accuracy100; synthetic ignore-EOS sweeps are latency-only. Fitting readiness and all fitting phase costs remain separately reported. There is no second training job for transfer.
+Additional actor loss: +A sum_H stopgrad(q*f(p/q)-alpha*p) log(p).
+rho=q_tail/p_tail; alpha=rho*f(1/rho)=1[rho>=.2]; both tail masses floored at1e-6.
 
-## Modular boundaries
+Original clipped PPO/GRPO loss stays in place; critic loss and reward stay unchanged. Correction uses original response mask, including rejected sampled-token outcomes, and original pre-rejection denominator. Requires one optimizer minibatch and the same pre-update model. Current/proximal logprob gap is audited and fails above1e-5; no alternative loss is silently substituted.
 
-Environment/reward plugins, training objectives and score correction are separate. The source-faithful PPO route executes the fork's loss unchanged; the existing GRPO/group-PG and score_centering.py adapters remain separately available. DPO requires chosen/rejected preference pairs and reference log-probabilities, not a reward-function substitution (see https://arxiv.org/html/2305.18290v3). DPO training and DPO score-centering are not advertised as implemented. The reproduction prioritizes verified original behavior rather than a fake universal objective switch.
+Real sampler top128 probabilities pass through SGLang, ModelResponse and original MathAgent interaction tensors. Actor staging shifts heads once. Correction gathers only heads and reuses sampled logprobs for normalization, avoiding another full-vocabulary fp32 buffer. Tests enumerate weighted expectations including rejected outcomes.
 
-CPU preflight: full existing suite, original-default config comparisons, packed logits/gradient equivalence, exact fitter copies, source hashes, patch verification, CLI compilation and shell syntax. Queue IDs and frozen revision are appended after submission. GPU results are pending and no speed/accuracy improvement is claimed.
+Paper experiments use REINFORCE; this is a tested analytic composition with the fork's clipped objective, not a paper-validated PPO experiment. Exact importance weighting already has zero expected weighted score, so correction can be small/zero when upper-five masking rarely binds.
 
-## Submitted serial chain
+Within each SC allocation, three alternating paired forward/backward timings compare correction off/on on four small real prefixes. No optimizer steps or extra GPU job. Artificial group advantages and same-model HF heads are disclosed. Actual SGLang serialization/transport cost is captured by fourth-versus-third full training.
 
-Frozen revision `825fd01612b4246fbd521fb08ef7c5001bf44fc4`. All jobs use griffith and A100-80GB PCIe constraints for matched GPU type.
+## Baselines and evaluation
 
-| Job | Workload | GPUs | Dependency |
-|---|---|---:|---|
-| 15205429 | fork-exact | 3 | none |
-| 15205430 | api-exact | 3 | 15205429 |
-| 15205431 | api-map | 4 | 15205430 |
-| 15205432 | score-centering | 1 | 15205431 |
-| 15205433 | transfer15 | 1 | 15205432 |
+TRL supplies independent synchronous optimization, without AReaL trainer/scheduler. Transport collects one whole update across two SGLang servers, waits for completion, trains and publishes weights before the next batch. Server flags match the fork. Baselines use constant LR, original reward transform, groups4, seeded initialization, FP32 trainable weights/Adam states, BF16 compute and a smaller padded microbatch to fit one trainer GPU.
 
-Only one job can run at a time; afterok dependencies prevent spending on downstream work after a failure. Detailed records: work/fork-submission.json.
+TRL retains official clipped objectives. PPO's joint policy/value optimizer and GRPO's response normalization differ from AReaL; saved source-fidelity notes document them. These are independent-framework baselines, not a pure scheduling ablation. Raw losses across different definitions are not comparable.
+
+Every final actor is evaluated on first100 official GSM8K test questions, same prompt, greedy native HF generation, max_new_tokens1024 and original verifier. Evaluation uses no KV mapping or score correction. Accuracy is correct final answers/100, separate from sampled training reward. One15-update seed does not establish convergence.
+
+## Subsequent transfer
+
+After eight comparisons, the previous one-GPU transfer request reuses direct PPO fork checkpoints; no extra training. Original replay covers15 transitions,64 training-holdout prompts/transition, alternating concurrent/sequential, abort.5sec, max_new1024, re-prefill noise floor, warm-ups and synthetic long-prefix sweeps. Holdout replay accuracy differs from official test100; ignore-EOS sweeps are latency-only.
+
+Retain all15 actor checkpoints for replay; original launcher deleted older ones. Keep the proven packed SDPA sequence isolation repair consistently in fork arms for Transformers5.3. Cado observes real Slurm cgroup/allocated GPUs. These differences are explicit.
+
+## Verification and queue
+
+CPU checks: eight HTTP specs; fork config defaults; dataset membership/order; real clipped-loss plus correction gradient; proxy heads; packed attention; official TRL imports/configs/tiny updates/callback ordering; patch/copied-tool hashes; shell syntax. GPU performance remains unverified until execution.
+
+Request3 GPUs without fitting,4 with fitting, matched A100-80GB PCIe hardware. Serial afterok dependencies permit one allocation at a time. Queue IDs/frozen source are recorded in work/matrix-submission.json after submission.

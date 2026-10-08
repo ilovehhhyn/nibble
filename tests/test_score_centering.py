@@ -299,3 +299,45 @@ def test_mis_tail_alpha_and_gradient_match_dense_reference_at_rho_not_one():
     got_grad = torch.autograd.grad(got.sum(), logits, retain_graph=True)[0]
     expected_grad = torch.autograd.grad(expected.sum(), logits)[0]
     assert torch.allclose(got_grad, expected_grad, atol=1e-12, rtol=1e-12)
+
+
+def test_ppo_mask_mode_matches_exact_dense_weighted_gradient():
+    from nibble.score_centering import score_centering_loss
+
+    logits = torch.tensor(
+        [[0.2, -0.1, 0.4, -0.7]], dtype=torch.float64, requires_grad=True
+    )
+    q = torch.tensor([[0.1, 0.2, 0.3, 0.4]], dtype=torch.float64)
+    logp = logits.log_softmax(-1)
+    ids = torch.tensor([[0, 1]])
+    q_head = q.gather(-1, ids)
+    p_head = logp.detach().exp().gather(-1, ids)
+    rho = ((1 - q_head.sum(-1)) / (1 - p_head.sum(-1))).clamp(min=1e-6)
+    head_ratio = p_head / q_head
+    head_weighted_q = torch.where(head_ratio <= 5.0, p_head, 0.0)
+    alpha = (rho >= 0.2).to(logp.dtype)
+    head_coeff = head_weighted_q - alpha[:, None] * p_head
+    advantage = torch.tensor([1.7], dtype=torch.float64)
+    sampled_id = torch.tensor([3])
+    sample_p = logp.gather(-1, sampled_id[:, None]).squeeze(-1)
+    sample_q = q.gather(-1, sampled_id[:, None]).squeeze(-1).log()
+    sample_ratio = (sample_p.detach() - sample_q).exp()
+    sample_weight = torch.where(sample_ratio <= 5.0, sample_ratio, 0.0)
+    base_clipped_ppo = -advantage * sample_weight * sample_p
+    exact_sc_addon = advantage * (head_coeff.detach() * logp.gather(-1, ids)).sum(-1)
+    expected = base_clipped_ppo + exact_sc_addon
+    got = score_centering_loss(
+        logp,
+        ids,
+        q_head.log(),
+        sample_p,
+        advantage,
+        sampled_sampler_logprob=sample_q,
+        importance="ppo_mask",
+    )
+    assert torch.allclose(
+        torch.autograd.grad(got.sum(), logits, retain_graph=True)[0],
+        torch.autograd.grad(expected.sum(), logits)[0],
+        atol=1e-12,
+        rtol=1e-12,
+    )

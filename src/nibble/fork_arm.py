@@ -1,4 +1,4 @@
-"""Run the unmodified AReaL PPO GSM8K arm with a live KV mapper fitter."""
+"""Run the original PPO/GRPO GSM8K arm; optionally center scores and map KV."""
 
 from contextlib import contextmanager, nullcontext
 import os
@@ -29,7 +29,6 @@ def arm_overrides(spec, runtime, run_dir):
         "actor.backend": "fsdp:d1p1t1",
         "actor.path": runtime.models[spec.model],
         "actor.attn_impl": "sdpa",
-        "critic.attn_impl": "sdpa",
         "ref.attn_impl": "sdpa",
         "train_dataset.batch_size": PROMPTS_PER_STEP,
         "gconfig.n_samples": COMPLETIONS_PER_PROMPT,
@@ -41,6 +40,8 @@ def arm_overrides(spec, runtime, run_dir):
         "sglang.attention_backend": "flashinfer",
         "total_train_steps": ARM_STEPS,
     }
+    if spec.algorithm == "ppo":
+        values["critic.attn_impl"] = "sdpa"
     if spec.cache_mode == "map":
         values.update(
             {
@@ -64,7 +65,9 @@ def render_config(spec, runtime, run_dir):
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     values = arm_overrides(spec, runtime, run_dir)
-    config = OmegaConf.load(runtime.areal_root / "examples/math/gsm8k_ppo.yaml")
+    config = OmegaConf.load(
+        runtime.areal_root / f"examples/math/gsm8k_{spec.algorithm}.yaml"
+    )
     for key, value in values.items():
         OmegaConf.update(
             config, key, value, merge=False, force_add=(key == "total_train_steps")
@@ -146,6 +149,7 @@ def run(spec, runtime, run_dir):
     from areal.dataset import get_custom_dataset
     from areal.utils.hf_utils import load_hf_tokenizer
     from .mapper import fitter_service
+    from .comparison_data import prepare_training
 
     run_dir = Path(run_dir)
     wall_started = time.perf_counter()
@@ -154,6 +158,12 @@ def run(spec, runtime, run_dir):
     train_dataset = get_custom_dataset(
         split="train", dataset_config=config.train_dataset, tokenizer=tokenizer
     )
+    shared_dataset, _, data_metadata = prepare_training(tokenizer)
+    if list(shared_dataset) != list(train_dataset):
+        raise ValueError(
+            "shared comparison training set differs from the original fork"
+        )
+    atomic_json(run_dir / "data-manifest.json", data_metadata)
     valid_dataset = get_custom_dataset(
         split="test", dataset_config=config.valid_dataset, tokenizer=tokenizer
     )
@@ -171,16 +181,20 @@ def run(spec, runtime, run_dir):
         if spec.fit_mappers
         else nullcontext()
     )
+    trainer_class = (
+        PPOTrainer  # Original gsm8k_rl.py uses this trainer for both configs.
+    )
+    workflow = "areal.workflow.openai.math_agent.MathAgent"
     with _cado_watcher(runtime, run_dir):
         with fitter_lifecycle:
-            with PPOTrainer(
+            with trainer_class(
                 config, train_dataset=train_dataset, valid_dataset=valid_dataset
             ) as trainer:
                 initialized = time.perf_counter()
                 trainer.train(
-                    workflow="areal.workflow.openai.math_agent.MathAgent",
+                    workflow=workflow,
                     workflow_kwargs=workflow_kwargs,
-                    eval_workflow="areal.workflow.openai.math_agent.MathAgent",
+                    eval_workflow=workflow,
                     eval_workflow_kwargs=eval_workflow_kwargs,
                 )
                 trained = time.perf_counter()
@@ -194,9 +208,10 @@ def run(spec, runtime, run_dir):
             "native_total_seconds": ended - wall_started,
             "steps": ARM_STEPS,
             "requested_optimizer_steps": ARM_STEPS,
-            "trainer": "AReaL PPOTrainer",
-            "objective": "AReaL original clipped PPO",
-            "score_centering": False,
+            "trainer": f"AReaL {trainer_class.__name__}",
+            "objective": f"AReaL original clipped {spec.algorithm.upper()}"
+            + (" + weighted score centering" if spec.score_centering else ""),
+            "score_centering": spec.score_centering,
             "spec": spec.to_dict(),
             "training_dataset": "full GSM8K train split via get_custom_dataset",
             "validation_dataset": "full GSM8K test split via get_custom_dataset",

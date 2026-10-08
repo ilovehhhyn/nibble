@@ -52,7 +52,10 @@ def main(argv=None):
         ap.error("protocol uses exactly three paired repeats")
     import torch
     from transformers import AutoModelForCausalLM
-    from .areal_loss import loss_from_logits
+    from types import SimpleNamespace
+    from areal.api.cli_args import RejectionSamplingConfig
+    from areal.utils.functional import ppo_actor_loss_fn
+    from .areal_loss import clipped_ppo_score_centering_correction
 
     if not os.environ.get("SLURM_JOB_ID"):
         raise RuntimeError("score-centering GPU benchmark requires Slurm")
@@ -118,6 +121,17 @@ def main(argv=None):
         1, target[:, None]
     ).squeeze(1)
 
+    data["prox_logp"] = data["logprobs"].clone()
+    config = SimpleNamespace(
+        is_critic=False,
+        ppo_n_minibatches=1,
+        prox_logp_method="recompute",
+        use_decoupled_loss=True,
+        temperature=1.0,
+        rejection_sampling=RejectionSamplingConfig(metric="ratio", upper=5.0),
+    )
+    del init, active, sampler_logp
+
     def trial(enabled):
         os.environ["NIBBLE_SCORE_CENTERING"] = "1" if enabled else "0"
         model.zero_grad(set_to_none=True)
@@ -126,7 +140,30 @@ def main(argv=None):
         en = torch.cuda.Event(enable_timing=True)
         st.record()
         out = model(input_ids=ids, attention_mask=attention, use_cache=False)
-        loss = loss_from_logits(out.logits, data)
+        # Original clipped PPO, with the same pre-update current/prox policy.
+        # Sampled logprobs are differentiable; the extra head loss reuses them.
+        labels = ids.roll(-1, dims=1).reshape(-1)
+        sampled = -torch.nn.functional.cross_entropy(
+            out.logits.reshape(-1, out.logits.shape[-1]).float(),
+            labels,
+            reduction="none",
+        )
+        loss, _ = ppo_actor_loss_fn(
+            sampled,
+            data["prox_logp"].reshape(-1),
+            data["logprobs"].reshape(-1),
+            data["advantages"].reshape(-1),
+            eps_clip=0.4,
+            loss_mask=mask.reshape(-1),
+            rejection_sampling=config.rejection_sampling,
+        )
+        if enabled:
+            loss = loss + clipped_ppo_score_centering_correction(
+                out.logits,
+                data,
+                config,
+                sampled_logprobs=sampled,
+            )
         if not torch.isfinite(loss):
             raise FloatingPointError("non-finite loss")
         loss.backward()
@@ -162,7 +199,8 @@ def main(argv=None):
             round(x - y, 4) for x, y in zip(timing["on"], timing["off"])
         ],
         "loss_values": losses,
-        "scope": "isolated HF forward plus existing AReaL loss backward; deterministic artificial group advantages; excludes SGLang top-k transport, end-to-end training throughput, accuracy, and variance",
+        "scope": "paired original clipped-PPO forward/backward plus optional upper-five-mask score correction; fixed real prefixes and artificial group advantages; q is the same HF model; excludes SGLang sampler/transport overhead and accuracy",
+        "objective": "original clipped PPO + optional correction only; also used by fork GRPO",
     }
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(result, indent=2) + "\n")

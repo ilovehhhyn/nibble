@@ -19,7 +19,7 @@ from typing import Literal
 import torch
 from torch import Tensor
 
-ImportanceMode = Literal["tis", "mis"] | None
+ImportanceMode = Literal["tis", "mis", "ppo_mask"] | None
 
 
 def _validate_logprobs(logprobs: Tensor, name: str) -> None:
@@ -63,7 +63,12 @@ def _importance_weight(log_ratio: Tensor, mode: ImportanceMode) -> Tensor:
             torch.exp(log_ratio),
             torch.zeros_like(log_ratio),
         )
-    raise ValueError("importance must be None, 'tis', or 'mis'")
+    if mode == "ppo_mask":
+        upper = log_ratio.new_tensor(5.0).log()
+        return torch.where(
+            log_ratio <= upper, torch.exp(log_ratio), torch.zeros_like(log_ratio)
+        )
+    raise ValueError("importance must be None, 'tis', 'mis', or 'ppo_mask'")
 
 
 def _head_weighted_sampler_mass(
@@ -86,7 +91,14 @@ def _head_weighted_sampler_mass(
             torch.exp(log_p),
             torch.zeros_like(log_p),
         )
-    raise ValueError("importance must be None, 'tis', or 'mis'")
+    if mode == "ppo_mask":
+        log_ratio = log_p - log_q
+        return torch.where(
+            log_ratio <= log_ratio.new_tensor(5.0).log(),
+            torch.exp(log_p),
+            torch.zeros_like(log_p),
+        )
+    raise ValueError("importance must be None, 'tis', 'mis', or 'ppo_mask'")
 
 
 def _tail_alpha(log_rho: Tensor, mode: ImportanceMode) -> Tensor:
@@ -107,7 +119,9 @@ def _tail_alpha(log_rho: Tensor, mode: ImportanceMode) -> Tensor:
             torch.ones_like(log_rho),
             torch.zeros_like(log_rho),
         )
-    raise ValueError("importance must be None, 'tis', or 'mis'")
+    if mode == "ppo_mask":
+        return (log_rho >= log_rho.new_tensor(0.2).log()).to(log_rho.dtype)
+    raise ValueError("importance must be None, 'tis', 'mis', or 'ppo_mask'")
 
 
 def grpo_policy_gradient_loss(
@@ -133,8 +147,8 @@ def grpo_policy_gradient_loss(
         )
     if advantage.shape != sampled_train_logprobs.shape:
         raise ValueError("advantage must match sampled logprob shape")
-    if importance not in (None, "tis", "mis"):
-        raise ValueError("importance must be None, 'tis', or 'mis'")
+    if importance not in (None, "tis", "mis", "ppo_mask"):
+        raise ValueError("importance must be None, 'tis', 'mis', or 'ppo_mask'")
     _validate_logprobs(sampled_train_logprobs, "sampled_train_logprobs")
     _validate_logprobs(sampled_sampler_logprob, "sampled_sampler_logprob")
     weights = (
@@ -197,8 +211,8 @@ def score_centering_loss(
         raise ValueError("provide exactly one of train_logprobs or train_head_logprobs")
     if reduction not in ("none", "sum", "mean"):
         raise ValueError("reduction must be 'none', 'sum', or 'mean'")
-    if importance not in (None, "tis", "mis"):
-        raise ValueError("importance must be None, 'tis', or 'mis'")
+    if importance not in (None, "tis", "mis", "ppo_mask"):
+        raise ValueError("importance must be None, 'tis', 'mis', or 'ppo_mask'")
     if sampler_topk_ids.dtype not in (torch.int32, torch.int64):
         raise TypeError("sampler_topk_ids must contain integer token IDs")
     if sampler_topk_ids.ndim < 1 or sampler_topk_ids.shape[-1] == 0:

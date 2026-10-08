@@ -75,9 +75,20 @@ def build_report(run_dir, status, error=None, elapsed=None):
     }
     report["training_evidence"].update(
         policy_losses=metric("ppo_actor/update/nibble_policy_loss"),
+        original_policy_losses=metric("ppo_actor/update/loss"),
+        critic_losses=metric("ppo_critic/update/loss"),
         uncentered_tis_losses=metric("ppo_actor/update/nibble_uncentered_tis_loss"),
         train_sampler_logprob_gaps=metric("ppo_actor/update/nibble_abs_logp_gap"),
         score_centering_token_fraction=metric("ppo_actor/update/nibble_sc_tokens"),
+        score_centering_correction=metric("ppo_actor/update/nibble_sc_correction"),
+        score_centering_q_head_mass=metric("ppo_actor/update/nibble_sc_q_head_mass"),
+        score_centering_p_head_mass=metric("ppo_actor/update/nibble_sc_p_head_mass"),
+        score_centering_tail_rho=metric("ppo_actor/update/nibble_sc_tail_rho"),
+        score_centering_behavior_gap=metric("ppo_actor/update/nibble_sc_abs_logp_gap"),
+        score_centering_proximal_gap=metric("ppo_actor/update/nibble_sc_prox_logp_gap"),
+        score_centering_valid_fraction=metric(
+            "ppo_actor/update/nibble_sc_prox_gap_within_tolerance"
+        ),
     )
     report["audit"]["policy_versions"] = [r.get("tags", {}) for r in records]
     event_path = run_dir / "events.jsonl"
@@ -112,10 +123,9 @@ def build_report(run_dir, status, error=None, elapsed=None):
             steps=steps,
             gradient_norms=[step["grad_norm"] for step in steps],
             policy_losses=[step["train_loss"] for step in steps],
-            uncentered_tis_losses=[step["train_loss"] for step in steps],
         )
     kv_events = []
-    for path in run_dir.glob("kv-events*"):
+    for path in list(run_dir.glob("kv-events*")) + list(run_dir.glob("kv_events*")):
         paths = list(path.rglob("*.jsonl")) if path.is_dir() else [path]
         for file in paths:
             kv_events.extend(

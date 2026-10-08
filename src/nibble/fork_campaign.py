@@ -81,23 +81,41 @@ def api_run(runtime, root, spec):
             terminate_group(server, {})
 
 
+def actor_checkpoint(run_dir):
+    """Select the actor's default save root, never the separately saved critic."""
+    root = (
+        Path(run_dir)
+        / "areal/checkpoints"
+        / os.environ.get("USER", "hh9077")
+        / "nibble"
+        / Path(run_dir).name
+        / "default"
+    )
+    checkpoints = list(root.glob("*globalstep14/config.json"))
+    if len(checkpoints) != 1:
+        raise RuntimeError("final actor checkpoint missing or ambiguous")
+    return checkpoints[0].parent
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("root", type=Path)
     parser.add_argument(
-        "--arm", choices=("fork-exact", "api-exact", "api-map"), required=True
+        "--arm", choices=("sync", "areal", "api-map", "api-map-sc"), required=True
     )
+    parser.add_argument("--algorithm", choices=("ppo", "grpo"), required=True)
     args = parser.parse_args()
     if not os.environ.get("SLURM_JOB_ID"):
         raise RuntimeError("fork comparison requires Slurm allocation")
     args.root.mkdir(parents=True, exist_ok=False)
     runtime = Runtime.load(require_token=False)
-    mapping = args.arm == "api-map"
+    mapping = args.arm in ("api-map", "api-map-sc")
+    synchronous = args.arm == "sync"
     spec = TrainSpec(
         model="qwen25-1.5b",
         dataset="gsm8k",
         reward="gsm8k",
-        algorithm="ppo",
+        algorithm=args.algorithm,
         target="slurm",
         max_gpus=4 if mapping else 3,
         max_steps=15,
@@ -106,11 +124,12 @@ def main():
         max_new_tokens=1024,
         max_prompt_tokens=1024,
         max_concurrent_rollouts=256,
-        max_staleness=2,
+        max_staleness=0 if synchronous else 2,
         timeout_seconds=20000,
-        learning_rate=1.7e-5,
-        objective="fork_ppo",
-        execution="fork_arm",
+        learning_rate=1.7e-5 if args.algorithm == "ppo" else 6e-6,
+        objective=f"fork_{args.algorithm}",
+        execution="trl_sync" if synchronous else "fork_arm",
+        score_centering=args.arm == "api-map-sc",
         cache_mode="map" if mapping else "recompute",
         fit_mappers=mapping,
     )
@@ -120,6 +139,7 @@ def main():
         dict(
             status="running",
             arm=args.arm,
+            algorithm=args.algorithm,
             slurm_job=os.environ["SLURM_JOB_ID"],
             started_at=started,
             spec=spec.to_dict(),
@@ -136,7 +156,7 @@ def main():
         check=True,
     ).stdout
     (args.root / "hardware.txt").write_text(hardware)
-    if args.arm == "fork-exact":
+    if args.arm == "sync":
         initial_env = runtime.environment(args.root)
         initial_env["CUDA_VISIBLE_DEVICES"] = runtime.gpu_ids[0]
         with (args.root / "initial-evaluation.log").open("w") as log:
@@ -156,9 +176,9 @@ def main():
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 check=True,
-                timeout=480,
+                timeout=1200,
             )
-    if args.arm == "fork-exact":
+    if args.arm in ("sync", "areal"):
         run_dir = args.root / args.arm
         report = execute(runtime, run_dir, spec)
         submission = 0.0
@@ -172,12 +192,12 @@ def main():
         raise RuntimeError(
             f"{args.arm} failed: {report['error']}; see {run_dir}/worker.log"
         )
-    checkpoints = list(
-        (run_dir / "areal/checkpoints").rglob("*globalstep14/config.json")
-    )
-    if len(checkpoints) != 1:
-        raise RuntimeError("final fork checkpoint missing or ambiguous")
-    checkpoint = checkpoints[0].parent
+    if synchronous:
+        checkpoint = Path(report["native"]["final_checkpoint"])
+        if not (checkpoint / "config.json").is_file():
+            raise RuntimeError("final standalone checkpoint is missing")
+    else:
+        checkpoint = actor_checkpoint(run_dir)
     eval_env = runtime.environment(args.root)
     eval_env["CUDA_VISIBLE_DEVICES"] = runtime.gpu_ids[0]
     with (args.root / "evaluation.log").open("w") as log:
@@ -197,8 +217,31 @@ def main():
             stdout=log,
             stderr=subprocess.STDOUT,
             check=True,
-            timeout=480,
+            timeout=1200,
         )
+    if spec.score_centering:
+        benchmark_env = runtime.environment(args.root)
+        benchmark_env["CUDA_VISIBLE_DEVICES"] = runtime.gpu_ids[0]
+        prefixes = Path(
+            "/scratch/gpfs/ARORA/hh9077/areal-kv/results/calibration-v0.jsonl"
+        )
+        with (args.root / "score-centering-overhead.log").open("w") as log:
+            subprocess.run(
+                [
+                    str(runtime.python),
+                    "-m",
+                    "nibble.score_centering_benchmark",
+                    str(checkpoint),
+                    str(args.root / "score-centering-overhead.json"),
+                    "--prefixes",
+                    str(prefixes),
+                ],
+                env=benchmark_env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                check=True,
+                timeout=480,
+            )
     evaluation = json.loads((args.root / "evaluation-100.json").read_text())
     if (
         evaluation["count"] != 100
@@ -210,6 +253,7 @@ def main():
         dict(
             status="completed",
             arm=args.arm,
+            algorithm=args.algorithm,
             slurm_job=os.environ["SLURM_JOB_ID"],
             started_at=started,
             ended_at=time.time(),
@@ -218,6 +262,7 @@ def main():
             evaluation=evaluation["accuracy"],
             spec=spec.to_dict(),
             submission_seconds=submission,
+            training_manifest=str(run_dir / "data-manifest.json"),
         ),
     )
 

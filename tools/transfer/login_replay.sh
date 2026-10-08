@@ -3,14 +3,14 @@
 # Usage: login_replay.sh <checkpoint default dir> <base model dir> <number of updates> <calibration prefixes> <out dir>
 set -euo pipefail
 source "$NIBBLE_PROJECT_ROOT/work/env.sh"
-export PYTHONPATH="$NIBBLE_CODE_ROOT/src:$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v4:$NIBBLE_PROJECT_ROOT/../cado/tplane/src"
+export PYTHONPATH="$NIBBLE_CODE_ROOT/src:$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v5:$NIBBLE_PROJECT_ROOT/../cado/tplane/src"
 export HF_DATASETS_CACHE="$NIBBLE_PROJECT_ROOT/../hf_cache/datasets"
 export PROJECT_ROOT="$NIBBLE_PROJECT_ROOT"
 export OMP_NUM_THREADS=4 HF_DATASETS_OFFLINE=1 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:?}"
 CKPT=$1; BASE=$2; UPDATES=$3; CAL=$4; OUT=$5
 COUNT=${COUNT:-64}; ABORT_AFTER=${ABORT_AFTER:-0.5}; SERVER_MEM_FRACTION=${SERVER_MEM_FRACTION:-0.45}; PORT=30133
 T=$NIBBLE_CODE_ROOT/tools; R="$NIBBLE_PYTHON"
-cd "$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v4"
+cd "$NIBBLE_PROJECT_ROOT/work/deps/areal-040cbfd5-nibble-v5"
 mkdir -p $OUT; REG=$OUT/registry; mkdir -p $REG
 ckpt_of() { if [ "$1" = 0 ]; then echo $BASE; else ls -d $CKPT/epoch*globalstep$(($1-1)) | head -1; fi; }
 echo "replay start $(date -Is) updates $UPDATES"

@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from nibble.areal_loss import loss_from_logits
@@ -96,3 +97,121 @@ def test_packed_multisequence_head_loss_matches_dense_tis_gradient(monkeypatch):
     assert torch.allclose(got_grad, expected_grad, atol=2e-7, rtol=2e-7)
     assert torch.equal(got_grad[-2:], torch.zeros_like(got_grad[-2:]))
     assert active_ids.numel() == 4
+
+
+def test_clipped_ppo_score_centering_correction_is_additive_and_audited(monkeypatch):
+    from types import SimpleNamespace
+
+    from areal import utils
+    from nibble.areal_loss import clipped_ppo_score_centering_correction
+
+    monkeypatch.setattr(
+        utils,
+        "stats_tracker",
+        SimpleNamespace(
+            denominator=lambda **kwargs: None, stat=lambda *args, **kwargs: None
+        ),
+    )
+    logits = torch.tensor(
+        [[0.3, -0.1, 0.2, -0.5], [0.1, 0.2, -0.2, 0.0]],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+    input_ids = torch.tensor([0, 1])
+    mask = torch.tensor([True, False])
+    labels = input_ids.roll(-1)
+    sampled = logits.log_softmax(-1).gather(-1, labels[:, None]).squeeze(-1)
+    q = torch.tensor([[0.1, 0.2, 0.3, 0.4]], dtype=torch.float64)
+    top_q, top_ids = q.topk(2, dim=-1)
+    data = {
+        "loss_mask": mask,
+        "input_ids": input_ids,
+        "advantages": torch.tensor([1.2, 0.0]),
+        "logprobs": torch.tensor([sampled[0].item(), 0.0]),
+        "prox_logp": torch.tensor([sampled[0].item(), 0.0]),
+        "sampler_topk_ids": torch.cat([top_ids, torch.zeros((1, 2), dtype=torch.long)]),
+        "sampler_topk_logprobs": torch.cat(
+            [top_q.log(), torch.zeros((1, 2), dtype=torch.float64)]
+        ),
+    }
+    cfg = SimpleNamespace(
+        is_critic=False,
+        ppo_n_minibatches=1,
+        prox_logp_method="recompute",
+        rejection_sampling=SimpleNamespace(level="token", action="mask", upper=5.0),
+        use_decoupled_loss=True,
+        temperature=1.0,
+    )
+    correction = clipped_ppo_score_centering_correction(
+        logits, data, cfg, sampled_logprobs=sampled
+    )
+    assert correction.isfinite()
+    assert torch.autograd.grad(correction, logits)[0][1].abs().sum() == 0
+    data["prox_logp"][0] += 1e-3
+    with pytest.raises(ValueError, match="prox/current logprob gap"):
+        clipped_ppo_score_centering_correction(
+            logits, data, cfg, sampled_logprobs=sampled
+        )
+
+
+def test_actual_fork_clipped_loss_plus_centering_cancels_constant_reward_drift(
+    monkeypatch,
+):
+    """Enumerate all sampled labels, including upper-five rejected outcomes."""
+    from types import SimpleNamespace
+    from areal import utils
+    from areal.api.cli_args import RejectionSamplingConfig
+    from areal.utils.functional import ppo_actor_loss_fn
+    from nibble.areal_loss import clipped_ppo_score_centering_correction
+
+    monkeypatch.setattr(
+        utils,
+        "stats_tracker",
+        SimpleNamespace(
+            denominator=lambda **kwargs: None, stat=lambda *args, **kwargs: None
+        ),
+    )
+    logits = torch.tensor([0.8, 0.15, 0.05], dtype=torch.float64).log().requires_grad_()
+    q = torch.tensor([0.01, 0.89, 0.10], dtype=torch.float64)
+    rows = logits[None, :].expand(3, -1)
+    ids = torch.tensor([2, 0, 1])
+    labels = ids.roll(-1)
+    sampled = rows.log_softmax(-1).gather(-1, labels[:, None]).squeeze(-1)
+    mask = torch.ones(3, dtype=torch.bool)
+    rs = RejectionSamplingConfig(metric="ratio", upper=5)
+    # Multiplying A by N*q simulates expectation over the categorical sampler.
+    advantages = 3 * q
+    data = dict(
+        input_ids=ids,
+        loss_mask=mask,
+        logprobs=q.log(),
+        prox_logp=sampled.detach(),
+        advantages=advantages,
+        sampler_topk_ids=torch.arange(3)[None, :].expand(3, -1),
+        sampler_topk_logprobs=q.log()[None, :].expand(3, -1),
+    )
+    cfg = SimpleNamespace(
+        is_critic=False,
+        ppo_n_minibatches=1,
+        prox_logp_method="recompute",
+        rejection_sampling=rs,
+        use_decoupled_loss=True,
+        temperature=1.0,
+    )
+    base, stat = ppo_actor_loss_fn(
+        sampled,
+        sampled.detach(),
+        q.log(),
+        advantages,
+        eps_clip=0.4,
+        loss_mask=mask,
+        rejection_sampling=rs,
+    )
+    assert not stat["behave_mask"][0]  # r=80 is rejected; do not reject C.
+    base_grad = torch.autograd.grad(base, logits, retain_graph=True)[0]
+    correction = clipped_ppo_score_centering_correction(
+        rows, data, cfg, sampled_logprobs=sampled
+    )
+    centered_grad = torch.autograd.grad(base + correction, logits)[0]
+    assert base_grad.abs().max() > 0.01
+    assert centered_grad.abs().max() < 2e-7

@@ -9,9 +9,9 @@ from nibble.runtime import Runtime
 
 
 def test_slurm_spec_rejects_wrong_gpu_count_and_loss_composition():
-    with pytest.raises(ValueError, match="exactly four"):
+    with pytest.raises(ValueError, match="requires four GPUs"):
         TrainSpec(model="x", target="slurm", max_gpus=2)
-    with pytest.raises(ValueError, match="paper group_pg_tis"):
+    with pytest.raises(ValueError, match="supported policy objective"):
         TrainSpec(model="x", score_centering=True)
     with pytest.raises(ValueError, match="zero staleness"):
         TrainSpec(

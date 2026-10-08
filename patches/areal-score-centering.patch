@@ -65,11 +65,14 @@
              is_finite = (
 --- a/areal/engine/fsdp_engine.py
 +++ b/areal/engine/fsdp_engine.py
-@@ -2108,6 +2108,16 @@
+@@ -2108,6 +2108,19 @@
              trie_node = inputs.pop("trie_node", None)
              ulysses_pad_size = 0
  
-+        if os.environ.get("NIBBLE_OBJECTIVE") == "group_pg_tis" or os.environ.get("NIBBLE_PACKED_SDPA") == "1":
++        if (
++            os.environ.get("NIBBLE_OBJECTIVE") == "group_pg_tis"
++            or os.environ.get("NIBBLE_PACKED_SDPA") == "1"
++        ):
 +            if self.parallel_helper.sp_size != 1 or self.parallel_helper.tp_size != 1:
 +                raise ValueError("Nibble packed SDPA requires TP=SP=1")
 +            from nibble.attention import packed_causal_mask
@@ -82,20 +85,46 @@
          inputs.pop("turn_ids", None)
          inputs.pop("is_truncated", None)
  
-@@ -2223,6 +2233,13 @@
-         local_weight = compute_microbatch_loss_weight(ctx.mb_input, loss_weight_fn)
+@@ -2224,6 +2237,21 @@
          if local_weight == 0:
              return logits.mean() * 0.0
-+
+ 
 +        if os.environ.get("NIBBLE_OBJECTIVE") == "group_pg_tis":
-+            if self.config.is_critic or self.enable_tree_training or self.parallel_helper.tp_size != 1 or self.parallel_helper.sp_size != 1:
++            if (
++                self.config.is_critic
++                or self.enable_tree_training
++                or self.parallel_helper.tp_size != 1
++                or self.parallel_helper.sp_size != 1
++            ):
 +                raise ValueError("Nibble group PG supports text FSDP with TP=SP=1 only")
 +            from nibble.areal_loss import loss_from_logits
-+            loss = loss_from_logits(logits, ctx.mb_input, temperature=self.config.temperature)
++
++            loss = loss_from_logits(
++                logits, ctx.mb_input, temperature=self.config.temperature
++            )
 +            return loss * (local_weight / total_loss_weight * loss_multiplier)
- 
++
          if self.config.is_critic and self.enable_tree_training:
              raise NotImplementedError(
+                 "Tree training with critic model is not supported yet."
+@@ -2273,6 +2301,17 @@
+                 vocab_min_logits=vocab_min_logits,
+                 vocab_max_logits=vocab_max_logits,
+             )
++            if os.environ.get("NIBBLE_SCORE_CENTERING") == "1":
++                if (
++                    self.parallel_helper.tp_size != 1
++                    or self.parallel_helper.sp_size != 1
++                ):
++                    raise ValueError("PPO score centering requires TP=SP=1")
++                from nibble.areal_loss import clipped_ppo_score_centering_correction
++
++                loss = loss + clipped_ppo_score_centering_correction(
++                    logits, ctx.mb_input, self.config, sampled_logprobs=logprobs
++                )
+         else:
+             values = self._compute_values(logits.squeeze(-1), ctx.ulysses_pad_size)
+             if ctx.pad_length > 0:
 --- a/areal/engine/sglang_remote.py
 +++ b/areal/engine/sglang_remote.py
 @@ -42,6 +42,31 @@
@@ -427,3 +456,67 @@
 +            res["sampler_topk_ids"] = sampler_topk_ids
 +            res["sampler_topk_logprobs"] = sampler_topk_logprobs
          return {k: v.unsqueeze(0) for k, v in res.items()}
+--- a/areal/experimental/openai/types.py
++++ b/areal/experimental/openai/types.py
+@@ -258,6 +258,43 @@
+             original_rewards=torch.tensor([float(original_reward)]),
+             is_truncated=torch.tensor([resp.stop_reason == "length"], dtype=torch.bool),
+         )
++        if resp.sampler_topk_ids is not None or resp.sampler_topk_logprobs is not None:
++            if resp.sampler_topk_ids is None or resp.sampler_topk_logprobs is None:
++                raise ValueError(
++                    "Sampler top-k IDs and logprobs must be provided together"
++                )
++            if (
++                len(resp.sampler_topk_ids) != resp.output_len
++                or len(resp.sampler_topk_logprobs) != resp.output_len
++            ):
++                raise ValueError(
++                    "Sampler top-k rows must align with response output tokens"
++                )
++            if any(
++                len(ids) != len(resp.sampler_topk_ids[0])
++                for ids in resp.sampler_topk_ids
++            ):
++                raise ValueError("Sampler top-k ID rows must have a consistent width")
++            if any(
++                len(logps) != len(resp.sampler_topk_logprobs[0])
++                for logps in resp.sampler_topk_logprobs
++            ):
++                raise ValueError(
++                    "Sampler top-k logprob rows must have a consistent width"
++                )
++            k = len(resp.sampler_topk_ids[0]) if resp.sampler_topk_ids else 0
++            if not k:
++                raise ValueError("Sampler top-k rows must not be empty")
++            result["sampler_topk_ids"] = torch.tensor(
++                [0] * (resp.input_len * k)
++                + [token for row in resp.sampler_topk_ids for token in row],
++                dtype=torch.long,
++            ).reshape(1, len(seq), k)
++            result["sampler_topk_logprobs"] = torch.tensor(
++                [0.0] * (resp.input_len * k)
++                + [token for row in resp.sampler_topk_logprobs for token in row],
++                dtype=torch.float32,
++            ).reshape(1, len(seq), k)
+         if self.mm_token_type_ids is not None or self.multi_modal_input is not None:
+             mm_token_type_ids = self.mm_token_type_ids or [0] * resp.input_len
+             if len(mm_token_type_ids) != resp.input_len:
+@@ -357,6 +394,8 @@
+ 
+ def normalize_logical_rollout_rewards(
+     results: list[dict[str, InteractionWithTokenLogpReward] | None],
++    *,
++    use_std: bool = True,
+ ) -> bool:
+     """Normalize row rewards against one explicit or equal-row rollout reference."""
+     if not results or any(not result for result in results):
+@@ -390,7 +429,7 @@
+     std = (
+         rewards.std(unbiased=False) if len(references) > 1 else rewards.new_tensor(1.0)
+     )
+-    scale = torch.where(std <= 1e-8, 1.0, std + 1e-8)
++    scale = torch.where(std <= 1e-8, 1.0, std + 1e-8) if use_std else 1.0
+     row_rewards = torch.tensor(
+         [v.reward for result in results for v in result.values()], dtype=torch.float32
+     )

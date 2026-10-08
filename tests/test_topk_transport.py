@@ -142,3 +142,23 @@ def test_score_centering_fields_follow_microbatch_packing_and_padding():
         assert pad_length == 253
         assert padded["sampler_topk_ids"].shape == (256, 128)
         assert padded["sampler_topk_logprobs"].shape == (256, 128)
+
+
+def test_interaction_exports_sampler_heads_and_zero_prompt_rows():
+    from areal.api.io_struct import ModelResponse
+    from areal.experimental.openai.types import InteractionWithTokenLogpReward
+
+    response = ModelResponse(
+        input_tokens=[10, 11],
+        output_tokens=[12, 13],
+        output_logprobs=[-0.3, -0.4],
+        sampler_topk_ids=[[2, 3], [4, 5]],
+        sampler_topk_logprobs=[[-0.2, -1.6], [-0.5, -1.1]],
+    )
+    interaction = InteractionWithTokenLogpReward(model_response=response)
+    data = interaction.to_tensor_dict()
+    assert data["sampler_topk_ids"].tolist() == [[[0, 0], [0, 0], [2, 3], [4, 5]]]
+    assert torch.allclose(
+        data["sampler_topk_logprobs"],
+        torch.tensor([[[0.0, 0.0], [0.0, 0.0], [-0.2, -1.6], [-0.5, -1.1]]]),
+    )

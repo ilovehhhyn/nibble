@@ -15,7 +15,7 @@ def main():
     import torch
     from datasets import load_dataset
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from .native import strict_gsm8k_reward
+    from .comparison_data import math_reward, PROMPT_SUFFIX
     from .report import atomic_json
 
     start = time.perf_counter()
@@ -39,8 +39,7 @@ def main():
                 [
                     {
                         "role": "user",
-                        "content": r["question"]
-                        + "\nPut the final answer in \\boxed{}.",
+                        "content": r["question"] + PROMPT_SUFFIX,
                     }
                 ],
                 tokenize=False,
@@ -64,7 +63,7 @@ def main():
             if tokenizer.eos_token_id in ids:
                 ids = ids[: ids.index(tokenizer.eos_token_id) + 1]
             text = tokenizer.decode(ids)
-            reward = strict_gsm8k_reward(None, text, None, ids, row["answer"])
+            reward = math_reward(text, row["answer"])
             records.append(
                 {
                     "test_index": begin + offset,
@@ -83,6 +82,8 @@ def main():
             "seconds": time.perf_counter() - start,
             "records": records,
             "scope": "first official GSM8K test prompts; deterministic native HF cache; one seed",
+            "reward": "original fork math_verify parse/verify defaults",
+            "test_indices": list(range(args.count)),
         },
     )
 

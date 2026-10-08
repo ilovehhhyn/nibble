@@ -8,7 +8,7 @@
     },
     "areal/engine/fsdp_engine.py": {
       "original": "3134c34c445cb6acb6b005a4bade9c770e7eac5a4365c7adb289f078017485e7",
-      "patched": "9fc9ec25695e5dcdaecec16442f1e7f8c3cb8c7be31e8d77a08437b4514046cd"
+      "patched": "4c83fabc8345b1a616947751bab24ab1ab17274e58699b15b172755fc8152d4a"
     },
     "areal/engine/sglang_remote.py": {
       "original": "0b5ff8cc65d26af2ebf385e9c5af1f592624c0786764bc9d19da715637811407",
@@ -29,6 +29,10 @@
     "areal/workflow/rlvr.py": {
       "original": "a532f6523bededa07171e0b60a3a1ff5f8151da71abfff80bd1bce6e3f74b45e",
       "patched": "c5f54dcc9a737d4935114256857b9892250ea399fa54da8f2fef87244b500f5d"
+    },
+    "areal/experimental/openai/types.py": {
+      "original": "b1317c9a88b40504607dae62bca425642a6e5f9901ce6912dde7271217c611af",
+      "patched": "665222228f21c528b80be69c897b3ece1033072b7e42fcdf92a3e78654d692cd"
     }
   },
   "paper": "https://arxiv.org/html/2609.20807v1"
