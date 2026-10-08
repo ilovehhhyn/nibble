@@ -18,9 +18,14 @@ def main():
     os.environ["NIBBLE_OBJECTIVE"] = spec.objective
     os.environ["NIBBLE_SCORE_CENTERING"] = "1" if spec.score_centering else "0"
     os.environ["NIBBLE_MAPPER_GPU"] = (
-        runtime.gpu_ids[3] if spec.target == "slurm" else ""
+        runtime.gpu_ids[3]
+        if spec.target == "slurm" and len(runtime.gpu_ids) == 4
+        else ""
     )
-    if spec.execution == "standalone_sync":
+    if spec.execution == "fork_arm":
+        os.environ["NIBBLE_PACKED_SDPA"] = "1"
+        from .fork_arm import run
+    elif spec.execution == "standalone_sync":
         from .sync_baseline import run
     else:
         from .native import run

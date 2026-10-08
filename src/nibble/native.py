@@ -3,6 +3,7 @@
 from pathlib import Path
 import importlib
 import time
+from contextlib import nullcontext
 
 
 def import_symbol(path):
@@ -139,18 +140,20 @@ def run(spec, runtime, run_dir):
     if workflow_class == "nibble.workflow:AuditedRLVRWorkflow":
         workflow_kwargs.update(audit_on=spec.audit_on, audit_dir=str(run_dir / "audit"))
     wall = time.perf_counter()
-    trainer_class = PPOTrainer
     if spec.fit_mappers:
-        from .mapper import fitting_trainer
+        from .mapper import fitter_service
 
-        trainer_class = fitting_trainer(PPOTrainer, spec, runtime, run_dir)
-    with trainer_class(config, train_dataset=dataset, valid_dataset=None) as trainer:
-        initialized = time.perf_counter()
-        trainer.train(
-            workflow=workflow_class.replace(":", "."),
-            workflow_kwargs=workflow_kwargs,
-        )
-        trained = time.perf_counter()
+        mapper_lifecycle = fitter_service(runtime, run_dir, spec.max_steps)
+    else:
+        mapper_lifecycle = nullcontext()
+    with mapper_lifecycle:
+        with PPOTrainer(config, train_dataset=dataset, valid_dataset=None) as trainer:
+            initialized = time.perf_counter()
+            trainer.train(
+                workflow=workflow_class.replace(":", "."),
+                workflow_kwargs=workflow_kwargs,
+            )
+            trained = time.perf_counter()
     ended = time.perf_counter()
     atomic_json(
         run_dir / "native-result.json",

@@ -35,14 +35,14 @@ class TrainSpec:
         for name, low, high in [
             ("max_gpus", 1, 8),
             ("rollouts_per_prompt", 2, 8),
-            ("prompts_per_step", 1, 8),
+            ("prompts_per_step", 1, 256),
             ("max_steps", 1, 15),
             ("max_new_tokens", 1, 1024),
             ("max_prompt_tokens", 16, 1024),
-            ("max_concurrent_rollouts", 1, 64),
+            ("max_concurrent_rollouts", 1, 256),
             ("max_staleness", 0, 2),
             ("seed", 0, 2**31 - 1),
-            ("timeout_seconds", 10, 1800),
+            ("timeout_seconds", 10, 21600),
         ]:
             value = getattr(self, name)
             if type(value) is not int or not low <= value <= high:
@@ -68,8 +68,10 @@ class TrainSpec:
             self.mapper_registry, str
         ):
             raise ValueError("mapper_registry must be a string or null")
-        if self.algorithm != "grpo":
-            raise ValueError("this MVP implements GRPO only")
+        if self.algorithm not in ("grpo", "ppo"):
+            raise ValueError(
+                "implemented algorithms are grpo and ppo; DPO is not implemented"
+            )
         if self.target not in ("login_pilot", "local", "slurm"):
             raise ValueError(
                 "target must be login_pilot, local, or slurm (inside an allocation)"
@@ -82,16 +84,48 @@ class TrainSpec:
             )
         if self.cache_mode == "recompute" and self.mapper_registry is not None:
             raise ValueError("mapper_registry only applies to map mode")
-        if self.objective not in ("legacy_grpo", "group_pg_tis"):
-            raise ValueError("objective must be legacy_grpo or group_pg_tis")
-        if self.execution not in ("areal", "standalone_sync"):
-            raise ValueError("execution must be areal or standalone_sync")
+        if self.objective not in ("legacy_grpo", "group_pg_tis", "fork_ppo"):
+            raise ValueError("objective must be legacy_grpo, group_pg_tis or fork_ppo")
+        if self.execution not in ("areal", "standalone_sync", "fork_arm"):
+            raise ValueError("execution must be areal, standalone_sync or fork_arm")
         if self.score_centering and self.objective != "group_pg_tis":
             raise ValueError(
                 "score centering requires the paper group_pg_tis objective"
             )
-        if self.target == "slurm" and self.max_gpus != 4:
+        if (
+            self.target == "slurm"
+            and self.max_gpus != 4
+            and not (
+                self.execution == "fork_arm"
+                and self.max_gpus == 3
+                and self.cache_mode == "recompute"
+            )
+        ):
             raise ValueError("the Slurm comparison requires exactly four GPUs")
+        if self.execution == "fork_arm" and (
+            self.algorithm != "ppo"
+            or self.objective != "fork_ppo"
+            or self.target != "slurm"
+            or self.score_centering
+        ):
+            raise ValueError(
+                "fork_arm uses the original PPO loss inside Slurm; score centering is measured separately"
+            )
+        if self.execution == "fork_arm" and (
+            self.max_steps != 15
+            or self.prompts_per_step != 256
+            or self.rollouts_per_prompt != 4
+            or self.max_concurrent_rollouts != 256
+            or self.max_staleness != 2
+            or self.learning_rate != 1.7e-5
+        ):
+            raise ValueError(
+                "fork_arm is the source-faithful 15-update, 256-prompt PPO experiment preset"
+            )
+        if self.algorithm == "ppo" and self.execution != "fork_arm":
+            raise ValueError("ppo requires fork_arm execution")
+        if self.objective == "fork_ppo" and self.execution != "fork_arm":
+            raise ValueError("fork_ppo requires fork_arm execution")
         if self.fit_mappers and (
             self.target != "slurm" or self.cache_mode != "map" or self.mapper_registry
         ):

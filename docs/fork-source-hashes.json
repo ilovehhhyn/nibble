@@ -1,0 +1,13 @@
+{
+  "jobs/arm.sbatch": "218588a4d7182c6804ebeb4aea91cbe46d48e22b90f0a2de2a4319dbf2af9ce5",
+  "jobs/transfer15.sbatch": "a7981af8e77e28ed99ec420a7284dfd7c8874375fe4dac0a094d4d973b6af9c6",
+  "AReaL-arm/examples/math/gsm8k_ppo.yaml": "1617596374d4ca976528e55037fb3e040f83cf13f505e2b6a5e68ec4df5c5732",
+  "AReaL-arm/examples/math/gsm8k_rl.py": "9fbdf33f0cc289809097f2b270e09b0194750b3ba8d328fed302bb9dd2a98596",
+  "tools/fitter_service.py": "976357035710c6ca29e3cce15c7cc0efbfc1a1e397042fc5914804fd27d92e9b",
+  "tools/fit_mapper_hf.py": "812e018e2df4ed4067d21a857aa2a638c447cad7a665cbe28d630a6099b570ba",
+  "tools/login/login_replay.sh": "31e2fd4ebeffd0e5a9c207a47da017b7fceaec49276235bb034ac1f95d205bad",
+  "tools/login/server_replay.py": "da5fcb4eb3fac153b688f71f751d2fcaa5952540465e068fadd278bcc975e3cf",
+  "tools/login/cado_watch.py": "a8a22112b96d45cf8694903fc25cffcad7f553873e5bc06366e34fa6dff47138",
+  "results/calibration-v0.jsonl": "5c91ed5d88ed17396cc92fa9d56bf4b59a81d079cb52d4162940b6fe2977cbd1",
+  "results/splits.json": "036973e586830e45573dc93854fa4c1517c7bfeb975fd9a6f8aae12b4ab9de78"
+}

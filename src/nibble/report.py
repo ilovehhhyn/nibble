@@ -48,7 +48,10 @@ def build_report(run_dir, status, error=None, elapsed=None):
     }
     audit_files = list((run_dir / "audit" / "records").glob("*.json"))
     report["audit"]["record_files"] = len(audit_files)
-    records = [json.loads(p.read_text()) for p in audit_files]
+    all_records = [json.loads(p.read_text()) for p in audit_files]
+    records = [r for r in all_records if r.get("kind") == "trajectory"]
+    report["audit"]["trajectory_records"] = len(records)
+    report["audit"]["non_trajectory_records"] = len(all_records) - len(records)
     rewards = [r["reward"] for r in records if r.get("reward") is not None]
     report["audit"].update(
         successful_trajectories=sum(r.get("outcome") == "ok" for r in records),
@@ -61,7 +64,8 @@ def build_report(run_dir, status, error=None, elapsed=None):
 
     def metric(name):
         return [
-            float(x) for x in re.findall(re.escape(name) + r"(?:/avg)?\s*│\s*([+\-0-9.e]+)", log)
+            float(x)
+            for x in re.findall(re.escape(name) + r"(?:/avg)?\s*│\s*([+\-0-9.e]+)", log)
         ]
 
     report["training_evidence"] = {
@@ -85,6 +89,19 @@ def build_report(run_dir, status, error=None, elapsed=None):
     report["mapper_fitting_seconds"] = sum(
         e.get("seconds", 0) for e in events if e.get("event") == "mapper_ready"
     )
+    ledger = run_dir / "mapper-readiness.jsonl"
+    if ledger.exists():
+        readiness = [
+            json.loads(line) for line in ledger.read_text().splitlines() if line
+        ]
+        report["mapper_service"] = {
+            "mode": "background",
+            "readiness_records": readiness,
+            "fitting_work_seconds": sum(
+                x["artifact_ready"] - x["fit_started"] for x in readiness
+            ),
+            "note": "Concurrent fitter work is not an additive trainer barrier cost; full reserved-GPU elapsed remains charged.",
+        }
     metrics_path = run_dir / "metrics.jsonl"
     if metrics_path.exists():
         steps = [

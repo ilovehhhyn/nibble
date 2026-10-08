@@ -53,7 +53,17 @@ class Runtime:
         if not Path(self.models[spec.model]).is_dir():
             raise ValueError("registered model snapshot is unavailable")
         required = (
-            1 if spec.target == "login_pilot" else (4 if spec.target == "slurm" else 2)
+            1
+            if spec.target == "login_pilot"
+            else (
+                (
+                    3
+                    if spec.execution == "fork_arm" and spec.cache_mode == "recompute"
+                    else 4
+                )
+                if spec.target == "slurm"
+                else 2
+            )
         )
         if spec.target == "slurm" and not os.environ.get("SLURM_JOB_ID"):
             raise ValueError("slurm jobs must run inside a scheduler allocation")
@@ -84,7 +94,7 @@ class Runtime:
             if spec.max_staleness == 0
             else "bounded-asynchronous",
             "api_execution": "background job",
-            "weight_update": "disk",
+            "weight_update": "xccl" if spec.execution == "fork_arm" else "disk",
             "objective": spec.objective,
             "score_centering": spec.score_centering,
             "reserved_fitter_gpu": self.gpu_ids[3] if required == 4 else None,

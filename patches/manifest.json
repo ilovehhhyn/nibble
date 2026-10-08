@@ -8,7 +8,7 @@
     },
     "areal/engine/fsdp_engine.py": {
       "original": "3134c34c445cb6acb6b005a4bade9c770e7eac5a4365c7adb289f078017485e7",
-      "patched": "06f1c2e4cadb729f22272c5b7910c52e210aabcd7b63f16aba444d8bfa4ddfee"
+      "patched": "9fc9ec25695e5dcdaecec16442f1e7f8c3cb8c7be31e8d77a08437b4514046cd"
     },
     "areal/engine/sglang_remote.py": {
       "original": "0b5ff8cc65d26af2ebf385e9c5af1f592624c0786764bc9d19da715637811407",

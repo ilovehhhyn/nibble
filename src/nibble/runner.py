@@ -64,6 +64,10 @@ def execute(runtime, run_dir, spec, cancelled=lambda: False, check_gpu=True):
             check_idle(plan["gpu_ids"])
         event(run_dir, "launch", plan=plan)
         env = runtime.environment(run_dir)
+        if spec.execution == "fork_arm":
+            env.update(
+                OMP_NUM_THREADS="8", MKL_NUM_THREADS="8", OPENBLAS_NUM_THREADS="8"
+            )
         env["CUDA_VISIBLE_DEVICES"] = ",".join(plan["gpu_ids"])
         with (run_dir / "worker.log").open("w") as log:
             proc = subprocess.Popen(

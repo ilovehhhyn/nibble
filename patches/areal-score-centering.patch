@@ -69,7 +69,7 @@
              trie_node = inputs.pop("trie_node", None)
              ulysses_pad_size = 0
  
-+        if os.environ.get("NIBBLE_OBJECTIVE") == "group_pg_tis":
++        if os.environ.get("NIBBLE_OBJECTIVE") == "group_pg_tis" or os.environ.get("NIBBLE_PACKED_SDPA") == "1":
 +            if self.parallel_helper.sp_size != 1 or self.parallel_helper.tp_size != 1:
 +                raise ValueError("Nibble packed SDPA requires TP=SP=1")
 +            from nibble.attention import packed_causal_mask
