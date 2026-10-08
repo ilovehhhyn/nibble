@@ -51,3 +51,20 @@ Retain all15 actor checkpoints for replay; original launcher deleted older ones.
 CPU checks: eight HTTP specs; fork config defaults; dataset membership/order; real clipped-loss plus correction gradient; proxy heads; packed attention; official TRL imports/configs/tiny updates/callback ordering; patch/copied-tool hashes; shell syntax. GPU performance remains unverified until execution.
 
 Request3 GPUs without fitting,4 with fitting, matched A100-80GB PCIe hardware. Serial afterok dependencies permit one allocation at a time. Queue IDs/frozen source are recorded in work/matrix-submission.json after submission.
+
+## Submitted matrix — October 7, 2026
+
+Frozen training source: `64b45bc429c0aec5b536893fa116f5afee2eb328`. Account `griffith`; matched A100-80GB PCIe nodes. The eight runs are serial and currently pending. Their full durable manifest is `work/matrix-submission.json`.
+
+| Arm | PPO job | GRPO job | GPUs |
+|---|---:|---:|---:|
+| sync | 15207807 | 15207811 | 3 |
+| areal | 15207804 | 15207808 | 3 |
+| api-map | 15207805 | 15207809 | 4 |
+| api-map-sc | 15207806 | 15207810 | 4 |
+
+Transfer-only replay job `15207812` follows all eight training jobs and reuses checkpoints from `15207804`. It adds no training run.
+
+Superseded pending jobs 15205429–15205433 were cancelled with elapsed 00:00:00. No comparison GPUs were consumed before submission. The first new job has no scheduler start estimate yet; queue status is not a training result.
+
+Validation: 45 CPU tests passed against the actual pinned V5 adapter; lint, eight source hashes, copied fitter equality and shell syntax passed. GPU accuracy and speed are pending execution.
