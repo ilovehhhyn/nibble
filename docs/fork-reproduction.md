@@ -74,3 +74,16 @@ Validation: 45 CPU tests passed against the actual pinned V5 adapter; lint, eigh
 The first direct PPO attempt, 15207804, failed after 37 allocation seconds before any optimizer update, checkpoint or Cado trajectory. Its source attempted to iterate the original unconnected RDataset proxy while checking training membership. PPOTrainer normally connects that proxy to its DataController during initialization.
 
 The repair compares shared rows with the original concrete data-worker loader before startup, leaving the original remote proxy, trainer and scheduler unchanged. A CPU regression uses the real cached full dataset and verifies that validation neither connects nor consumes the proxy. The failed logs/reports are preserved. Remaining jobs had not started; their requests will be replaced with the corrected immutable source. This is one failed startup retry, not a repeat of completed training.
+
+### Corrected queued requests
+
+Corrected frozen source: `a5c652dc8d13d08f9fdff863b10ffc04da52dd8c`. Only 15207804 had started and failed; old 15207805–15207812 were still pending and were replaced before spending GPUs. The new requests keep the same serial resource limits and all comparison settings.
+
+| Arm | PPO job | GRPO job | GPUs |
+|---|---:|---:|---:|
+| sync | 15210059 | 15210063 | 3 |
+| areal | 15210056 | 15210060 | 3 |
+| api-map | 15210057 | 15210061 | 4 |
+| api-map-sc | 15210058 | 15210062 | 4 |
+
+Transfer-only replay `15210064` reuses direct PPO `15210056`. Six focused CPU tests passed, including real full-data membership and unconnected-proxy regression; the fix is independently reviewed. Replacement GPU execution/results are pending. Failure evidence is in `work/failure-15207804.json`; the original submission remains in `work/matrix-submission-before-rdataset-15207804.json`.
