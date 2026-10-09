@@ -119,19 +119,20 @@ def clipped_ppo_score_centering_correction(
         raise ValueError(
             f"score centering requires prox/current logprob gap <= 1e-5; got {prox_gap.max().item():.3g}"
         )
-    sampled_logits = (
-        flat_logits.gather(-1, ids.roll(-1)[:, None]).squeeze(-1)[mask].float()
-    )
-    log_normalizer = sampled_logits - sampled
     all_head_ids = data["sampler_topk_ids"].reshape(len(mask), -1).long()
+    # One gather shares the dense backward scatter for sampled and head logits.
+    gathered_logits = flat_logits.gather(
+        -1, torch.cat((labels[:, None], all_head_ids), dim=-1)
+    )
+    sampled_logits = gathered_logits[:, 0][mask].float()
+    log_normalizer = sampled_logits - sampled
     head_ids = all_head_ids[mask]
     head_q = data["sampler_topk_logprobs"].reshape(len(mask), -1)[mask]
     behavior = data["logprobs"].reshape(-1)[mask].detach()
     advantage = data["advantages"].reshape(-1)[mask].detach()
     from .score_centering import score_centering_loss
 
-    head_logits = flat_logits.gather(-1, all_head_ids)
-    head_logits = head_logits[mask].float()
+    head_logits = gathered_logits[:, 1:][mask].float()
     train_head_logprobs = head_logits - log_normalizer[:, None]
     correction = score_centering_loss(
         None,
