@@ -153,13 +153,14 @@ def clipped_ppo_score_centering_correction(
     p_tail = (1.0 - p_coverage).clamp(min=tail_floor)
     tail_rho = q_tail / p_tail
     stats_tracker.denominator(n_nibble_sc_tokens=torch.ones_like(mask[mask]))
+    # The fork tracker accepts float32 telemetry; retain float64 mass math above.
     stats_tracker.stat(
-        nibble_sc_correction=correction.detach(),
-        nibble_sc_q_head_mass=q_coverage.detach(),
-        nibble_sc_p_head_mass=p_coverage.detach(),
-        nibble_sc_tail_rho=tail_rho.detach(),
-        nibble_sc_abs_logp_gap=(sampled.detach() - behavior).abs(),
-        nibble_sc_prox_logp_gap=prox_gap.detach(),
+        nibble_sc_correction=correction.detach().float(),
+        nibble_sc_q_head_mass=q_coverage.detach().float(),
+        nibble_sc_p_head_mass=p_coverage.detach().float(),
+        nibble_sc_tail_rho=tail_rho.detach().float(),
+        nibble_sc_abs_logp_gap=(sampled.detach() - behavior).abs().float(),
+        nibble_sc_prox_logp_gap=prox_gap.detach().float(),
         nibble_sc_prox_gap_within_tolerance=(prox_gap <= 1e-5).float(),
         denominator="n_nibble_sc_tokens",
     )

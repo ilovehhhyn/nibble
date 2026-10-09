@@ -215,3 +215,75 @@ def test_actual_fork_clipped_loss_plus_centering_cancels_constant_reward_drift(
     centered_grad = torch.autograd.grad(base + correction, logits)[0]
     assert base_grad.abs().max() > 0.01
     assert centered_grad.abs().max() < 2e-7
+
+
+@pytest.mark.parametrize("advantage_dtype", [torch.float32, torch.float64])
+def test_clipped_correction_actual_tracker_preserves_loss_and_gradient(
+    monkeypatch, advantage_dtype
+):
+    # Real tracker rejects double stats; telemetry must not change loss math.
+    from areal import utils
+    from areal.utils.stats_tracker import DistributedStatsTracker
+    from nibble.areal_loss import clipped_ppo_score_centering_correction
+
+    logits = torch.tensor(
+        [[0.3, -0.1, 0.2, -0.5], [0.1, 0.2, -0.2, 0.0]],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+    ids = torch.tensor([0, 1])
+    sampled = logits.log_softmax(-1).gather(-1, ids.roll(-1)[:, None]).squeeze(-1)
+    q = torch.tensor([[0.001, 0.2, 0.3, 0.499]], dtype=torch.float64)
+    head_q, head_ids = q.topk(4, dim=-1)
+    data = dict(
+        loss_mask=torch.tensor([True, False]),
+        input_ids=ids,
+        advantages=torch.tensor([1.2, 0.0], dtype=advantage_dtype),
+        logprobs=sampled.detach(),
+        prox_logp=sampled.detach(),
+        sampler_topk_ids=torch.cat([head_ids, torch.zeros((1, 4), dtype=torch.long)]),
+        sampler_topk_logprobs=torch.cat([head_q.log(), torch.zeros((1, 4))]),
+    )
+    cfg = SimpleNamespace(
+        is_critic=False,
+        ppo_n_minibatches=1,
+        prox_logp_method="recompute",
+        rejection_sampling=SimpleNamespace(level="token", action="mask", upper=5.0),
+        use_decoupled_loss=True,
+        temperature=1.0,
+    )
+    monkeypatch.setattr(
+        utils,
+        "stats_tracker",
+        SimpleNamespace(
+            denominator=lambda **kwargs: None,
+            stat=lambda **kwargs: None,
+        ),
+    )
+    reference = clipped_ppo_score_centering_correction(
+        logits, data, cfg, sampled_logprobs=sampled
+    )
+    reference_grad = torch.autograd.grad(reference, logits, retain_graph=True)[0]
+    tracker = DistributedStatsTracker()
+    monkeypatch.setattr(utils, "stats_tracker", tracker)
+    got = clipped_ppo_score_centering_correction(
+        logits, data, cfg, sampled_logprobs=sampled
+    )
+    got_grad = torch.autograd.grad(got, logits)[0]
+    assert torch.equal(got, reference)
+    assert torch.equal(got_grad, reference_grad)
+    assert got.isfinite() and got_grad.isfinite().all()
+    assert got_grad.abs().sum() > 0
+    assert torch.equal(got_grad[1], torch.zeros_like(got_grad[1]))
+    for key in [
+        "nibble_sc_correction",
+        "nibble_sc_q_head_mass",
+        "nibble_sc_p_head_mass",
+        "nibble_sc_tail_rho",
+    ]:
+        value = tracker.stats[key][0]
+        assert value.dtype == torch.float32
+        assert value.isfinite().all() and not value.requires_grad
+    assert torch.equal(
+        tracker.stats["nibble_sc_correction"][0], got.detach().float()[None]
+    )
